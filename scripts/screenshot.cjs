@@ -45,6 +45,10 @@ app.whenReady().then(async () => {
     await workspace.openApp('folio');
     await wait(2500);
     await shot('4-forma-and-folio');
+    const folio = (await workspace.openApp('folio')).view.webContents;
+    await folio.executeJavaScript('exportSlides(true)');
+    await wait(600);
+    await shot('5-export-toast');
     await workspace.shutdown();
     app.exit(0);
   } catch (error) { console.error(error); app.exit(1); }

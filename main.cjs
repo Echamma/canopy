@@ -6,6 +6,14 @@ const {createSpaces, COLORS} = require('./lib/spaces.cjs');
 const {createWorkspace} = require('./lib/workspace.cjs');
 const {safeFileName} = require('./lib/files.cjs');
 
+// --smoke-test checks a packaged build: a throwaway space opens Forma and Folio from the copies inside the exe.
+const smokeTest = process.argv.includes('--smoke-test');
+if (smokeTest) {
+  process.env.CANOPY_TEST = '1';
+  const scratch = path.join(app.getPath('temp'), 'canopy-smoke-' + process.pid);
+  app.setPath('userData', path.join(scratch, 'profile'));
+  process.env.CANOPY_SPACES_DIR = path.join(scratch, 'spaces');
+}
 const testMode = process.env.CANOPY_TEST === '1';
 if (!testMode) {
   app.setPath('userData', path.join(app.getPath('appData'), 'Canopy'));
@@ -38,6 +46,7 @@ const emit = (kind, value) => send('canopy:' + kind, value);
 const fromShell = event => !!window && !window.isDestroyed() && event.sender === window.webContents;
 function shellHandle(channel, handler) {
   ipcMain.handle(channel, (event, ...args) => {
+    if (!window || window.isDestroyed()) return null; // a last call while Canopy closes
     if (!fromShell(event)) throw new Error('Unknown sender.');
     return handler(...args);
   });
@@ -99,6 +108,7 @@ function registerShell() {
   });
   shellHandle('canopy:add-paths', paths => workspace.addPaths(Array.isArray(paths) ? paths.filter(item => typeof item === 'string' && path.isAbsolute(item)) : []));
   shellHandle('canopy:open-file', name => workspace.openFile(name));
+  shellHandle('canopy:send-file', (name, appId) => workspace.sendFiles([name], appId).then(() => true, error => { emit('toast', {text: error.message}); return false; }));
   shellHandle('canopy:file-menu', name => workspace.fileMenu(name));
   shellHandle('canopy:list-documents', () => workspace.listDocuments());
   shellHandle('canopy:open-document', (appId, id) => workspace.openDocument(appId, id).catch(error => emit('toast', error.message)));
@@ -141,5 +151,27 @@ app.whenReady().then(() => {
     } finally { closing = false; }
   });
   window.loadFile(path.join(__dirname, 'shell', 'index.html'));
+  if (smokeTest) runSmokeTest();
 });
+
+async function runSmokeTest() {
+  const timer = setTimeout(() => { console.error('Canopy smoke test timed out'); app.exit(1); }, 60000);
+  try {
+    if (window.webContents.isLoading()) await new Promise(resolve => window.webContents.once('did-finish-load', resolve));
+    const space = await spaces.create({name: 'Smoke test'});
+    await workspace.openSpace(space.id);
+    for (const id of ['forma', 'folio']) {
+      const entry = catalog.find(item => item.id === id);
+      await workspace.openApp(id);
+      console.log(`PASS: ${entry.name} opens from ${entry.dir}`);
+    }
+    await workspace.shutdown();
+    clearTimeout(timer);
+    app.exit(0);
+  } catch (error) {
+    console.error('Canopy smoke test failed:', error.message, JSON.stringify(catalog.map(({id, dir, problem}) => ({id, dir, problem}))));
+    clearTimeout(timer);
+    app.exit(1);
+  }
+}
 app.on('window-all-closed', () => app.quit());

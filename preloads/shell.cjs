@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('canopy', {
   addFiles: call('canopy:add-files'),
   addDroppedFiles: list => ipcRenderer.invoke('canopy:add-paths', [...list].map(file => webUtils.getPathForFile(file)).filter(Boolean)),
   openFile: call('canopy:open-file'),
+  sendFile: call('canopy:send-file'),
   fileMenu: call('canopy:file-menu'),
   startDrag: name => ipcRenderer.send('canopy:start-drag', name),
   listDocuments: call('canopy:list-documents'),

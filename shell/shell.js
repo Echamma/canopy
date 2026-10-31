@@ -43,13 +43,26 @@ const size = bytes => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${Math.ro
 const appById = id => state?.apps.find(item => item.id === id);
 const matches = text => !query || text.toLowerCase().includes(query);
 
-function toast(text) {
+// A short message in the top bar. A file an app just saved comes with buttons to send it on to the other apps.
+function toast(value) {
+  const {text, file, targets = []} = typeof value === 'string' ? {text: value} : value;
   const element = $('toast');
-  element.textContent = text;
-  element.title = text;
+  const label = document.createElement('span');
+  label.className = 'toast-text';
+  label.textContent = text;
+  label.title = text;
+  element.replaceChildren(label);
+  const hide = () => element.classList.remove('show');
+  for (const id of targets) {
+    const item = appById(id);
+    if (!item) continue;
+    const send = button('toast-action', null, () => { hide(); api.sendFile(file, id); });
+    send.append(leaf(item.accent, 14), document.createTextNode(`Send to ${item.name}`));
+    element.append(send);
+  }
   element.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => element.classList.remove('show'), 4000);
+  toastTimer = setTimeout(hide, targets.length ? 10000 : 4000);
 }
 
 // ---- Where to? ----

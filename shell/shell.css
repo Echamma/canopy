@@ -94,8 +94,12 @@ body[data-mood="tide"] .cta:hover{background:var(--cta-hover)}
 .tab .dot{width:6px;height:6px;border-radius:50%;background:var(--select-ink)}
 .tab .dot.starting{background:var(--sun)}
 .tab .dot.failed{background:var(--danger)}
-.toast{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 10px;height:26px;line-height:26px;border-radius:var(--radius-pill);background:var(--select-fill);color:var(--select-ink);font-size:13px;font-weight:600;opacity:0;transition:opacity .2s}
-.toast.show{opacity:1}
+.toast{display:flex;align-items:center;gap:4px;min-width:0;max-width:640px;height:28px;padding:0 3px 0 12px;border-radius:var(--radius-pill);background:var(--select-fill);color:var(--select-ink);font-size:13px;font-weight:600;opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s}
+.toast.show{opacity:1;visibility:visible}
+.toast:empty{display:none}
+.toast-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:6px}
+.toast-action{display:inline-flex;align-items:center;gap:6px;flex:none;height:22px;padding:0 8px;border:0;border-radius:var(--radius-pill);background:rgba(238,242,234,.10);color:var(--ink);font-size:12px;font-weight:700}
+.toast-action:hover{background:rgba(238,242,234,.18)}
 .clock{font-weight:600;padding:0 6px;color:var(--ink)}
 .body{flex:1;min-height:0;display:flex;gap:6px;padding:0 6px 6px}
 

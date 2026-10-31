@@ -83,6 +83,13 @@ app.whenReady().then(async () => {
     await until(async () => (await workspace.listDocuments()).some(doc => doc.app === 'folio'), 'the Folio project to show in the sidebar');
     check((await fs.readdir(path.join(space.dir, 'Folio'))).some(name => name.endsWith('.folio.json')), 'Folio saves carousels in the space Folio folder');
 
+    // The export's toast offers to send it on; Forma takes it in one click.
+    await until(() => inShell(`[...document.querySelectorAll('#toast .toast-action')].some(b => b.textContent === 'Send to Forma')`), 'the toast to offer Send to Forma');
+    const formaLayers = await forma.executeJavaScript(`window.FormaSession.snapshot().shapes.length`);
+    await inShell(`[...document.querySelectorAll('#toast .toast-action')].find(b => b.textContent === 'Send to Forma').click()`);
+    await until(async () => (await forma.executeJavaScript(`window.FormaSession.snapshot().shapes.length`)) === formaLayers + 1, 'the Folio slide to become a Forma layer');
+    check(workspace.state().focused === 'forma', 'Send to Forma from the export toast moves the Folio slide into Forma and shows Forma');
+
     // Both apps answer their own copy of 'load-recovery' through the router.
     check(await forma.executeJavaScript(`window.formaDesktop.loadRecovery().then(project => Array.isArray(project?.shapes))`), "Forma's load-recovery reaches Forma");
     check(await folio.executeJavaScript(`desktop.loadRecovery().then(value => value === null || Array.isArray(value.slides))`), "Folio's load-recovery reaches Folio");
