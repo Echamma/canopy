@@ -1,0 +1,11 @@
+[package]
+name = "canopy"
+description = "Canopy: one window for Forma, Folio and StreamCuts, with shared spaces and files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+canopy-core = { path = "../canopy-core" }
+canopy-ui = { path = "../canopy-ui" }
+streamcuts = { path = "../../../../streamcuts/native" }

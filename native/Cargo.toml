@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = ["crates/canopy-core", "crates/canopy-ui", "crates/canopy"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+license = "UNLICENSED"
+
+[profile.dev.package."*"]
+# Dependencies (image decoding, egui) are much faster optimized; Canopy's own code stays quick to rebuild.
+opt-level = 2

@@ -4,7 +4,8 @@ Canopy runs Forma, Folio and StreamCuts in one window. Work on these branches:
 
 - This repo: `dev`. Never merge into `main`; the owner merges after testing.
 - Forma (`D:\projects\forma-studio`) and Folio (`D:\projects\folio-carousel-studio`): `canopy`. Run `git status` before switching, and ask before moving uncommitted changes.
-- StreamCuts: no branch. Canopy hosts it unchanged; its live checkout is a Codex worktree in OneDrive, so don't edit it for Canopy work.
+- StreamCuts: `canopy` in `D:\projects\streamcuts` (its native Rust rewrite lives in `native\`). Never edit the OneDrive worktree (`...\ChatGPT\StreamCuts\p3-integration`): it's Codex's, with uncommitted work.
+- The native Rust rewrite (egui) is in progress: read `HANDOFF.md` first, and keep it current when you stop.
 
 Checks before committing:
 

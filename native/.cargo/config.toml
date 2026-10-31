@@ -1,0 +1,9 @@
+# Recent Windows crates need dlltool to make import libraries; the GNU toolchain has none on PATH and its bundled GNU
+# dlltool needs an assembler it doesn't ship. LLVM's archiver acts as dlltool when named dlltool.exe; Canopy's
+# native\scripts\setup-toolchain.ps1 puts one in %LOCALAPPDATA%\canopy-toolchain. rust-lld links what it produces.
+[target.x86_64-pc-windows-gnu]
+rustflags = [
+  "-C", "dlltool=C:\\Users\\elias\\AppData\\Local\\canopy-toolchain\\dlltool.exe",
+  "-C", "linker=rust-lld",
+  "-C", "linker-flavor=ld.lld",
+]
