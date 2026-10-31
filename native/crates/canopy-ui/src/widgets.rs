@@ -107,7 +107,7 @@ pub enum RowMark {
 impl Row<'_> {
     pub fn show(self, ui: &mut Ui) -> Response {
         let width = ui.available_width();
-        let (rect, response) = ui.allocate_exact_size(vec2(width, 40.0), Sense::click_and_drag());
+        let (rect, response) = ui.allocate_exact_size(vec2(width, 46.0), Sense::click_and_drag());
         let painter = ui.painter();
         let fill = if self.highlighted { color::SELECT_FILL } else if response.hovered() { color::VEIL_HOVER } else { color::VEIL };
         painter.rect_filled(rect, 8, fill);
@@ -122,8 +122,8 @@ impl Row<'_> {
         let text_left = rect.left() + 36.0;
         let clip = Rect::from_min_max(egui::pos2(text_left, rect.top()), egui::pos2(rect.right() - 8.0, rect.bottom()));
         let painter = painter.with_clip_rect(clip);
-        painter.text(egui::pos2(text_left, rect.top() + 6.0), Align2::LEFT_TOP, self.title, font::ui(14.0), color::INK);
-        painter.text(egui::pos2(text_left, rect.bottom() - 6.0), Align2::LEFT_BOTTOM, self.detail, font::ui(12.0), color::INK_MUTED);
+        painter.text(egui::pos2(text_left, rect.center().y - 1.0), Align2::LEFT_BOTTOM, self.title, font::ui(14.0), color::INK);
+        painter.text(egui::pos2(text_left, rect.center().y + 2.0), Align2::LEFT_TOP, self.detail, font::ui(12.0), color::INK_MUTED);
         focus_ring(ui, &response, rect, 8);
         response
     }
