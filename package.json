@@ -1,0 +1,49 @@
+{
+  "name": "canopy",
+  "version": "0.1.0",
+  "description": "Canopy: one workspace for Forma, Folio and StreamCuts, with shared spaces and files",
+  "author": "Echamma",
+  "license": "UNLICENSED",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"tests/unit/*.test.cjs\" && electron tests/workspace.cjs",
+    "test:unit": "node --test \"tests/unit/*.test.cjs\"",
+    "vendor": "node scripts/vendor-apps.cjs",
+    "build:win": "electron-builder --win portable --x64 --publish never",
+    "prebuild:win": "node scripts/vendor-apps.cjs"
+  },
+  "dependencies": {
+    "ajv": "8.18.0",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "local.canopy.workspace",
+    "productName": "Canopy",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "lib/**",
+      "preloads/**",
+      "shell/**",
+      "assets/**",
+      "apps/**"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "assets/canopy.ico",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "Canopy-${version}-${arch}-portable.${ext}"
+    }
+  }
+}

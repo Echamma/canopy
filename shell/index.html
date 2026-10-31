@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:">
+<title>Canopy</title>
+<link rel="stylesheet" href="shell.css">
+</head>
+<body data-mood="tide">
+<div class="ground" aria-hidden="true"></div>
+
+<!-- Where to? -->
+<section id="home" class="home" hidden>
+  <nav class="rail" aria-label="Canopy">
+    <span class="monogram" aria-hidden="true">C</span>
+    <div class="spacer"></div>
+    <button id="home-open-folder" class="rail-btn" aria-label="Open a space folder" title="Open a space folder"></button>
+  </nav>
+  <main class="home-main">
+    <h1>Where to?</h1>
+    <div id="space-tiles" class="space-tiles"></div>
+    <p id="home-note" class="muted"></p>
+  </main>
+</section>
+
+<!-- A space -->
+<section id="workspace" class="workspace" hidden>
+  <header class="topbar">
+    <button id="home-button" class="ib monogram" aria-label="All spaces" title="All spaces">C</button>
+    <button id="space-pill" class="pill" aria-label="Switch space"><span id="space-leaf" class="leaf leaf-20"></span><span id="space-name"></span><span class="chev" aria-hidden="true"></span></button>
+    <nav id="app-tabs" class="tabs" aria-label="Apps in this space"></nav>
+    <span id="toast" class="toast" role="status" aria-live="polite"></span>
+    <div class="spacer"></div>
+    <button id="split-button" class="ib bordered" aria-pressed="false" aria-label="Show two apps side by side" title="Show two apps side by side"></button>
+    <span id="clock" class="clock"></span>
+  </header>
+  <div class="body">
+    <aside id="sidebar" class="sidebar" aria-label="This space">
+      <div class="search-row">
+        <label class="search">
+          <span class="visually-hidden">Search this space</span>
+          <span class="search-icon" aria-hidden="true"></span>
+          <input id="search" type="search" placeholder="Search this space">
+        </label>
+      </div>
+      <div class="lists">
+        <section aria-labelledby="documents-heading">
+          <div class="section-head"><h2 id="documents-heading">Projects</h2></div>
+          <ul id="documents" class="rows"></ul>
+        </section>
+        <section aria-labelledby="files-heading">
+          <div class="section-head">
+            <h2 id="files-heading">Files</h2>
+            <button id="add-files" class="ib" aria-label="Add files" title="Add files"></button>
+            <button id="reveal-space" class="ib" aria-label="Show the space folder" title="Show the space folder"></button>
+          </div>
+          <ul id="files" class="rows"></ul>
+        </section>
+      </div>
+      <p class="hint">Drag a file into an app, or right-click it to send it.</p>
+      <nav id="dock" class="dock" aria-label="Open an app"></nav>
+    </aside>
+    <main id="main" class="main">
+      <div id="launcher" class="launcher">
+        <span class="launcher-lead">You're in</span>
+        <span class="pill pill-big"><span id="launcher-leaf" class="leaf leaf-24"></span><span id="launcher-space"></span></span>
+        <div id="launcher-tiles" class="tiles"></div>
+        <p class="muted">Ctrl+Tab moves between apps. Ctrl+1, Ctrl+2 and Ctrl+3 jump to one.</p>
+      </div>
+      <div id="panes" class="panes" hidden></div>
+    </main>
+  </div>
+</section>
+
+<dialog id="new-space" class="sheet" aria-labelledby="new-space-title">
+  <form id="new-space-form" method="dialog">
+    <h2 id="new-space-title">Name your space</h2>
+    <p class="muted">A space keeps your Forma, Folio and StreamCuts work together, with the files they share.</p>
+    <label class="field"><span>Name</span><input id="space-name-input" maxlength="60" required autocomplete="off" placeholder="Client work"></label>
+    <fieldset class="field">
+      <legend>Color</legend>
+      <div id="color-chips" class="chips"></div>
+    </fieldset>
+    <div class="field">
+      <span>Kept in</span>
+      <div class="location"><span id="space-location"></span><button id="space-location-change" type="button" class="small-btn">Change</button></div>
+    </div>
+    <p id="new-space-error" class="error" role="alert"></p>
+    <div class="actions">
+      <button id="new-space-cancel" type="button" class="small-btn">Back</button>
+      <button id="new-space-create" type="submit" class="cta">Create space</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="shell.js"></script>
+</body>
+</html>
