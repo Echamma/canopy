@@ -110,9 +110,11 @@ impl AppDescriptor {
     }
 
     /// On its own an app keeps projects in Documents and private data in AppData, like any desktop app.
+    /// `CANOPY_APP_HOME` puts all of it in one folder instead (tests, screenshots).
     pub fn standalone_place(&self) -> Place {
-        let documents = dirs::document_dir().unwrap_or_else(std::env::temp_dir);
-        let data = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
+        let home = std::env::var_os("CANOPY_APP_HOME").map(PathBuf::from);
+        let documents = home.clone().or_else(dirs::document_dir).unwrap_or_else(std::env::temp_dir);
+        let data = home.or_else(dirs::data_dir).unwrap_or_else(std::env::temp_dir);
         Place {
             space: None,
             projects_dir: documents.join(format!("{} Projects", self.name)),
