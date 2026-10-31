@@ -5,7 +5,9 @@ const os = require('node:os');
 const path = require('node:path');
 const files = require('../../lib/files.cjs');
 
-const folder = async () => fs.mkdtemp(path.join(os.tmpdir(), 'canopy-files-'));
+const made = [];
+const folder = async () => { const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'canopy-files-')); made.push(dir); return dir; };
+test.after(() => Promise.all(made.map(dir => fs.rm(dir, {recursive: true, force: true}))));
 
 test('names are made safe and unique, keeping .folio.json together', async () => {
   const dir = await folder();

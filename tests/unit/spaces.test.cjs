@@ -5,8 +5,11 @@ const os = require('node:os');
 const path = require('node:path');
 const {createSpaces, spacePaths} = require('../../lib/spaces.cjs');
 
+const made = [];
+test.after(() => Promise.all(made.map(dir => fs.rm(dir, {recursive: true, force: true}))));
 async function setup() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'canopy-spaces-'));
+  made.push(root);
   return {root, spaces: createSpaces({registryFile: path.join(root, 'profile', 'spaces.json'), defaultRoot: path.join(root, 'Canopy')})};
 }
 
