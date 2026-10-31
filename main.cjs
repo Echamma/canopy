@@ -1,4 +1,4 @@
-const {app, BrowserWindow, ipcMain, dialog, protocol, Menu} = require('electron');
+const {app, BrowserWindow, ipcMain, dialog, protocol, Menu, shell} = require('electron');
 const path = require('node:path');
 const {createIpcRouter} = require('./lib/ipc-router.cjs');
 const {resolveApps} = require('./lib/apps.cjs');
@@ -69,6 +69,17 @@ function spaceMenu() {
     ]).popup({window});
   });
 }
+// Right-clicking a space on "Where to?". Removing it from the list leaves its folder alone.
+async function spaceTileMenu(id) {
+  const space = await spaces.get(id);
+  if (!space) return;
+  Menu.buildFromTemplate([
+    {label: 'Open', click: () => workspace.openSpace(id).catch(error => emit('toast', error.message))},
+    {label: 'Show in Explorer', click: () => shell.openPath(space.dir)},
+    {type: 'separator'},
+    {label: 'Remove from this list', click: () => spaces.forget(id).then(() => emit('state', workspace.state()))}
+  ]).popup({window});
+}
 async function addSpaceFolder() {
   const result = await dialog.showOpenDialog(window, {title: 'Open a Canopy space', properties: ['openDirectory']});
   if (result.canceled || !result.filePaths[0]) return null;
@@ -96,6 +107,7 @@ function registerShell() {
     return workspace.state();
   });
   shellHandle('canopy:space-menu', spaceMenu);
+  shellHandle('canopy:space-tile-menu', spaceTileMenu);
   shellHandle('canopy:reveal-space', () => workspace.revealSpace());
   shellHandle('canopy:open-app', id => workspace.openApp(id).then(() => true, error => { emit('toast', error.message); return false; }));
   shellHandle('canopy:focus-app', id => workspace.focusApp(id));

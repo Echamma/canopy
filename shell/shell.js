@@ -75,6 +75,7 @@ async function renderHome() {
       try { await api.openSpace(space.id); } catch (error) { $('home-note').textContent = error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); }
     });
     tile.title = space.available ? space.dir : `Folder not found: ${space.dir}`;
+    tile.addEventListener('contextmenu', event => { event.preventDefault(); api.spaceTileMenu(space.id); });
     const name = document.createElement('span');
     name.className = 'name';
     name.textContent = space.name;

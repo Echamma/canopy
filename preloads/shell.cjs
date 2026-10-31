@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('canopy', {
   openSpace: call('canopy:open-space'),
   goHome: call('canopy:go-home'),
   spaceMenu: call('canopy:space-menu'),
+  spaceTileMenu: call('canopy:space-tile-menu'),
   revealSpace: call('canopy:reveal-space'),
   openApp: call('canopy:open-app'),
   focusApp: call('canopy:focus-app'),
