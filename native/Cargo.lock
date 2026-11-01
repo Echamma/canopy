@@ -1520,6 +1520,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tiny-skia",
+ "ttf-parser",
 ]
 
 [[package]]
