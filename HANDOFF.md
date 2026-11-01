@@ -1,6 +1,6 @@
 # Canopy native rewrite: handoff
 
-Active agent: Codex (took over 2026-11-01; Claude resumes after its quota resets at about 12:30 local)
+Active agent: none (Codex handed back on 2026-11-01; Claude can resume after its quota resets)
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
@@ -83,15 +83,22 @@ Spaces are shared with Electron Canopy: `%APPDATA%\Canopy\spaces.json` and the s
   - Forma `cargo test`: 43 pass. Canopy workspace: 14 pass. StreamCuts: 45 pass (+1 ignored device test).
   - Export dialog like Electron's: Video (MP4 or WebM/VP9+Opus, 24/30/60 fps, normal or large, even sizes as Electron rounds them), Animated SVG, Picture, Project file. Animated SVG (`animated_svg.rs`) ports `svgText`/`sampleLayer`; a test compares it element by element with Electron's own output for `tests\fixtures\animated.json` (made by running Electron's `svgText` in Electron; fflate and mediabunny stubbed with an import map).
 
+- Codex, 2026-11-01 takeover, Forma `canopy` (four commits):
+  - `7f95399`: SVG editor preview can pick the topmost painted element, set its fill or stroke, or delete it. Selection uses the same resvg rasterizer as the preview; a focused test checks hit order and edit results. The selected part is cleared when the markup is typed over.
+  - `1ae3c17`: Layers list rows drag to reorder `scene.shapes` (the draw order). Duplicate and Delete stay in place while selection changes.
+  - `d566229`: Shift-click in the Layers list or canvas toggles multi-selection; Ctrl+A selects all layers; dragging a selected layer moves the group. Linked text is updated after its target so the group moves once.
+  - `17169c3`: Scene settings are always reachable in the inspector, with landscape, portrait, square and custom width/height. `Scene::resize` now matches Electron's separate X/Y position scale and uniform size scale, including recorded motion and linked text fields. A model test covers the portrait conversion.
+  - After each commit, Forma `cargo test --offline` (44 pass) and `cargo build --offline`, and Canopy workspace `cargo test --offline` (14 pass) and `cargo build --offline` passed with the shared target directory. No Electron code changed, so npm checks were not rerun. These UI changes have not yet been checked by a window screenshot. `cargo fmt --all -- --check` shows extensive pre-existing formatting differences across the shared path workspaces, so no workspace-wide formatting was applied.
+
 ## In progress
 
-- No uncommitted code. Forma remains short of Electron parity: see Next steps.
+- No uncommitted code. Forma remains short of Electron parity: see Next steps. Live Boss AI validation could not run because `GEMINI_API_KEY` is absent from the process environment. No release exe was installed or replaced.
 
 ## Next steps, in order
 
 1. **Ship when the owner says so:** the release exes build (see Done). Don't put them in `D:\Software` or replace `D:\Software\Canopy.exe` without asking. StreamCuts needs FFmpeg on PATH (or `STREAMCUTS_FFMPEG`), and Python with faster-whisper for captions; a shipped StreamCuts should carry `transcribe.py` next to it (`transcribe::script` looks in the exe's parent folders).
 2. **Validate Boss AI live** when the owner sets `GEMINI_API_KEY` in the process environment. Use a short test VOD, inspect suggestions and create a project; keep the key out of logs. The recorded-response and local HTTP paths already pass. The default model in native code follows the web backend (`GEMINI_MODEL`, default `gemini-3.5-flash`).
-3. **Finish native Forma parity before starting Folio.** Rendering, media, exports and the main editing tools match Electron (see Done). Left, smaller: picking and recoloring single parts in the SVG editor (Electron's click-to-select part, fill/stroke, delete part), layer order (drag in the Layers list), multi-selection (Shift-click, Ctrl+A, moving several), scene settings (`src\ui\scene-settings.js`: sizes beyond landscape/portrait), quick animate rail and "Drop onto the screen" (`src\ui\rail.js`, `drop-item` in `animate\motion.js`), arrange as poses (`model\clips.js arrangeAsPoses`), onion skin. Note: the Layers panel hides Duplicate/Delete when nothing is selected, so the list jumps 72 px on select (Codex's layout; worth fixing). Electron's MCP automation (`src\automation.js`, `mcp\`) has no native counterpart yet.
+3. **Finish native Forma parity before starting Folio.** Rendering, media, exports, SVG part editing, layer reordering, multi-selection/group movement and scene dimensions now work (see Done). Next in this item: quick animate rail and "Drop onto the screen" (`src\ui\rail.js`, `drop-item` in `animate\motion.js`), arrange as poses (`model\clips.js arrangeAsPoses`), onion skin. Check the four new UI changes in a scratch standalone window or Canopy pane. Electron's MCP automation (`src\automation.js`, `mcp\`) has no native counterpart yet.
 4. **Build Folio native** on Folio `canopy` and host it in Canopy `dev`, following `docs\APP_CONTRACT.md`. Verify shared-space round trips and a standalone window.
 5. **Shipping remains owner-gated.** New Rust changes have debug builds and tests but no fresh release build. Before replacing `D:\Software\Canopy.exe`, build the release apps and have the owner test/approve the replacement. Never merge the branches into `main` here.
 
