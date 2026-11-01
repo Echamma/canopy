@@ -1,6 +1,6 @@
 # Canopy native rewrite: handoff
 
-Active agent: Codex
+Active agent: none
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
@@ -104,17 +104,23 @@ Spaces are shared with Electron Canopy: `%APPDATA%\Canopy\spaces.json` and the s
 
 - Claude, 2026-11-01 13:24: Codex's Folio element list and controls checked in a window (they work). Then Folio `canopy`: New menu (starter or Navy ribbon carousel, `samples::navy`); Pick a layout… (all ten layouts drawn as thumbnails in the project's brand; navy also sets its look); the ten Fun Tech carousels added to a standalone Folio's folder once (`samples::seed`, never inside a space; files named after `libraryId` like Electron); the Projects gallery (covers one a frame, cached by save time, search, four a row); Preview (one slide large, arrows and arrow keys); File: open a `.folio.json` as a new project, save a portable copy; Figma references… (the bundled `assets\references`, Portrait/Square and Light/Dark, picking applies layout, size and theme; the navy original starts the navy carousel). Folio tests: 9 (+1 ignored).
 
+- Codex, 2026-11-01 afternoon (all commits pushed):
+  - Folio `canopy`: `1f5b135`, `fa8daeb`, `2fd218c` add image paste, including clipboard sources that provide text and an image. egui 0.37 already emits `PasteImage`; `arboard` handles the mixed case. The UI event is tested without touching the real clipboard. `2ff392f` places a dropped image at the slide point and fixes received images to enter undo and autosave. A test checks position and saving. `0d62064` writes a separate Electron-compatible `last-session.json` recovery copy before saving; `c3b8174` refuses to switch projects when saving the current one fails, preserving that recovery copy. Failure paths have tests.
+  - Canopy `dev`: `3165f1d`, `21b6e48`, `8952f9f`, `f115031`, `2e5b0e9` pass drop positions to native apps and route Explorer drops to the pane under the pointer; sidebar and menu behavior is preserved. Windows winit's OLE handler ignores the supplied drag coordinates, so `os_drop_position` queries `GetCursorPos` and converts with the viewport's scale; it is approximate if the cursor moves before the next frame. A conversion test covers scaling. Contract updated in `docs/APP_CONTRACT.md`.
+  - Tests after changes: Folio 13 pass + 1 ignored; Forma 46 pass; StreamCuts 45 pass + 1 ignored audio-device test; Canopy 15 pass (3 shell, 11 core, 1 UI). `npm test` in Canopy passed 15 unit and 28 workspace checks after `npm run bundle` in Forma. Native debug builds passed. Fresh release builds and scratch startup screenshots passed for Canopy, Forma, Folio and StreamCuts. Canopy and Folio release exes: `D:\projects\canopy\native\target\release`; Forma: `D:\projects\canopy\native\target\forma-standalone\release` (its newly generated target was moved there to keep the Forma checkout clean); StreamCuts: `D:\projects\streamcuts\native\target\release`. No installed exe was replaced.
+  - A fresh standalone Folio screenshot showed slide 01 selected, so the earlier slide-02 report was not reproduced. The scratch Canopy window opened and showed a test image, but `window-shot.ps1` refused to send the click because the window was not in front. Real desktop clipboard paste, Explorer drop and sidebar drag still need interactive verification; the automated tests do not validate Windows OLE or the actual clipboard. Mixed text/image clipboard fallback is not tested against a real clipboard.
+
 ## In progress
 
-- Folio element controls need the interactive window check described above. No uncommitted code. Live Boss AI validation still waits on `GEMINI_API_KEY`. No release exe was installed or replaced.
+- Claude already checked the Folio element controls in a window. The new Folio clipboard and positioned drops need a real interactive check, including Explorer, sidebar, split panes and a mixed text/image clipboard. Windows drop position is sampled at the next frame. Live Boss AI validation still waits on `GEMINI_API_KEY`. No uncommitted code or installed release exe.
 
 ## Next steps, in order
 
 1. **Ship when the owner says so:** the release exes build (see Done). Don't put them in `D:\Software` or replace `D:\Software\Canopy.exe` without asking. StreamCuts needs FFmpeg on PATH (or `STREAMCUTS_FFMPEG`), and Python with faster-whisper for captions; a shipped StreamCuts should carry `transcribe.py` next to it (`transcribe::script` looks in the exe's parent folders).
 2. **Validate Boss AI live** when the owner sets `GEMINI_API_KEY` in the process environment. Use a short test VOD, inspect suggestions and create a project; keep the key out of logs. The recorded-response and local HTTP paths already pass. The default model in native code follows the web backend (`GEMINI_MODEL`, default `gemini-3.5-flash`).
 3. **Forma native matches Electron Forma** apart from Electron's MCP automation (`src\automation.js`, `mcp\`: AI tools driving Forma), which has no native counterpart yet; leave it unless the owner asks.
-4. **Finish Folio native parity** (Electron: `app.js`, `index.html`). Left: pasting an image from the clipboard (egui gives no image paste; `arboard` would) and dropping a file at the drop point on the slide (the Canopy `Host`/standalone drop gives no position: centered today); a recovery copy on close separate from the project file (native saves the project itself on close, so this may not be needed). Also seen once: standalone Folio started with slide 02 selected instead of 01; check `Folio::new`/the arrow keys. Then a release build and the owner's go-ahead for shipping.
-5. **Shipping remains owner-gated.** New Rust changes have debug builds and tests but no fresh release build. Before replacing `D:\Software\Canopy.exe`, build the release apps and have the owner test/approve the replacement. Never merge the branches into `main` here.
+4. **Finish verifying Folio parity** (Electron: `app.js`, `index.html`). The clipboard, positioned drops and separate recovery are implemented and tested as above. Check real desktop paste (including mixed clipboard), Explorer drop and sidebar drag on the slide in standalone and Canopy, including split-pane routing; the scripted window could not be brought to the foreground. Check recovery and error display interactively. The slide-02 startup report did not reproduce in a fresh scratch window.
+5. **Shipping remains owner-gated.** Fresh native release builds open on scratch data, but the owner still needs to test and approve replacement. Package StreamCuts' `transcribe.py` with Python/faster-whisper and FFmpeg/FFprobe, and Folio's `assets\references` beside the binaries (the checkout path is only a development fallback). Never merge the branches into `main` here.
 
 ## Build and test
 
