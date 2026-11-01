@@ -478,11 +478,15 @@ impl Shell {
         let files_dir = SpacePaths::new(&open.space.dir).files();
         let mut reveal = false;
         let mut add = false;
+        // From the bottom: the dock, the hint above it, and the lists fill the rest.
+        let dock = Rect::from_min_max(pos2(rect.left(), rect.bottom() - 46.0), rect.max);
+        let hint = Rect::from_min_max(pos2(rect.left() + 8.0, dock.top() - 40.0), pos2(rect.right() - 8.0, dock.top() - 4.0));
         ui.scope_builder(UiBuilder::new().max_rect(rect.shrink(8.0)), |ui| {
             ui.add(egui::TextEdit::singleline(&mut open.search).hint_text("Search this space").desired_width(f32::INFINITY).margin(vec2(10.0, 7.0)));
             let query = open.search.trim().to_lowercase();
             ui.add_space(6.0);
-            egui::ScrollArea::vertical().max_height(rect.height() - 120.0).auto_shrink(false).show(ui, |ui| {
+            let list_height = (hint.top() - 6.0 - ui.cursor().top()).max(60.0);
+            egui::ScrollArea::vertical().max_height(list_height).auto_shrink(false).show(ui, |ui| {
                 section_label(ui, "Projects");
                 let docs: Vec<_> = open.documents.iter().filter(|(_, d)| query.is_empty() || d.name.to_lowercase().contains(&query)).collect();
                 if docs.is_empty() {
@@ -541,11 +545,13 @@ impl Shell {
                     });
                 }
             });
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new("Drag a file into an app, or right-click it to send it.").font(font::ui(12.0)).color(color::INK_MUTED));
+        });
+        ui.scope_builder(UiBuilder::new().max_rect(hint), |ui| {
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                ui.label(egui::RichText::new("Drag a file into an app, or right-click it to send it.").font(font::ui(12.0)).color(color::INK_MUTED));
+            });
         });
         // Dock
-        let dock = Rect::from_min_max(pos2(rect.left(), rect.bottom() - 46.0), rect.max);
         ui.painter().line_segment([dock.left_top(), dock.right_top()], egui::Stroke::new(1.0, color::HAIRLINE));
         let mut show = None;
         for (index, slot) in slots.iter().enumerate() {
@@ -749,5 +755,58 @@ impl eframe::App for Shell {
 
     fn on_exit(&mut self) {
         self.close_space();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A shell with a space open and three apps that aren't native, so no app starts.
+    fn shell() -> Shell {
+        let dir = std::env::temp_dir().join("canopy-shell-tests");
+        let space = Space { id: "test".into(), name: "Test".into(), color: "leaf".into(), created_at: 0, dir: dir.clone(), last_opened_at: 0 };
+        let info = SpaceInfo { id: space.id.clone(), name: space.name.clone(), dir: dir.clone() };
+        let slots = ["a", "b", "c"]
+            .map(|id| Slot { id, name: id, description: "", accent: Accent::Leaf, initial: "A", kind: Kind::External { exe: PathBuf::new(), accepts: |_| true } })
+            .into();
+        let open = Open { space, info, apps: HashMap::new(), visible: Vec::new(), focused: None, split: false, files: Vec::new(), documents: Vec::new(), listed_at: Instant::now(), search: String::new() };
+        Shell { spaces: Spaces::new(dir.join("spaces.json"), &dir), slots, open: Some(open), toasts: Vec::new(), new_space: None, home_note: String::new() }
+    }
+
+    fn panes(shell: &Shell) -> (Vec<usize>, Option<usize>) {
+        let open = shell.open.as_ref().unwrap();
+        (open.visible.clone(), open.focused)
+    }
+
+    #[test]
+    fn one_pane_shows_the_app_you_pick() {
+        let ctx = egui::Context::default();
+        let mut shell = shell();
+        shell.show_app(&ctx, 1);
+        shell.show_app(&ctx, 2);
+        assert_eq!(panes(&shell), (vec![2], Some(2)));
+    }
+
+    #[test]
+    fn split_adds_an_app_and_picking_another_replaces_the_one_not_in_use() {
+        let ctx = egui::Context::default();
+        let mut shell = shell();
+        shell.show_app(&ctx, 0);
+        shell.set_split(&ctx, true);
+        assert_eq!(panes(&shell), (vec![0, 1], Some(0)));
+        shell.show_app(&ctx, 2);
+        assert_eq!(panes(&shell), (vec![0, 2], Some(2)));
+        shell.set_split(&ctx, false);
+        assert_eq!(panes(&shell), (vec![2], Some(2)));
+    }
+
+    #[test]
+    fn sending_to_an_app_that_isnt_native_yet_shows_it_and_says_so() {
+        let ctx = egui::Context::default();
+        let mut shell = shell();
+        shell.send(&ctx, vec![SharedFile::new("C:/clips/clip.mp4")], 1);
+        assert_eq!(panes(&shell), (vec![1], Some(1)));
+        assert!(shell.toasts.last().is_some_and(|toast| toast.text.contains("isn't in Canopy yet")));
     }
 }

@@ -10,7 +10,7 @@ fn main() -> eframe::Result {
     }
     eframe::run_native(
         "Canopy",
-        eframe::NativeOptions { viewport, ..Default::default() },
+        eframe::NativeOptions { viewport, centered: true, ..Default::default() },
         Box::new(|creation| {
             canopy_ui::install(&creation.egui_ctx);
             let mut shell = shell::Shell::new();

@@ -77,7 +77,7 @@ pub fn run_standalone(descriptor: &'static AppDescriptor) -> eframe::Result {
     if let Ok(icon) = eframe::icon_data::from_png_bytes(descriptor.icon_png) {
         viewport = viewport.with_icon(icon);
     }
-    let options = eframe::NativeOptions { viewport, ..Default::default() };
+    let options = eframe::NativeOptions { viewport, centered: true, ..Default::default() };
     eframe::run_native(
         descriptor.name,
         options,
