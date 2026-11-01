@@ -1,5 +1,5 @@
 //! The shell: "Where to?" (your spaces) and a space (app tabs, the sidebar of projects and files, one or two panes).
-//! Native apps draw inside their pane; Forma and Folio, until they're native, open their own exe.
+//! Native apps draw inside their pane; Folio, until it is native, opens its own exe.
 
 use canopy_core::files::{FileEntry, copy_into, list_files};
 use canopy_core::spaces::{Space, SpacePaths, Spaces};
@@ -30,7 +30,7 @@ fn catalog() -> Vec<Slot> {
     let software = PathBuf::from("D:\\Software");
     vec![
         Slot { name: "Forma", description: "Animate shapes and pictures", accent: Accent::Clay, initial: "Fo",
-            kind: Kind::External { exe: software.join("Forma.exe"), accepts: |f| f.name.to_lowercase().ends_with(".forma") } },
+            kind: Kind::Native(&forma_native::DESCRIPTOR) },
         Slot { name: "Folio", description: "Make carousels", accent: Accent::Sky, initial: "Fl",
             kind: Kind::External { exe: software.join("Folio Carousel Studio.exe"), accepts: |_| false } },
         Slot { name: "StreamCuts", description: "Edit videos and cut clips", accent: Accent::Berry, initial: "SC", kind: Kind::Native(&streamcuts::DESCRIPTOR) },
