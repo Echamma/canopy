@@ -1,6 +1,6 @@
 # Canopy native rewrite: handoff
 
-Active agent: none
+Active agent: Claude (2026-11-01, from 17:38 local)
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
