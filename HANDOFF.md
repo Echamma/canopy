@@ -1,6 +1,6 @@
 # Canopy native rewrite: handoff
 
-Active agent: none (Claude handed off to Codex on 2026-10-31 at 23:30 local; Claude resumes after its quota resets at about 02:35 on 2026-11-01)
+Active agent: Claude (since 2026-11-01 02:40 local; Codex never started: the interactive TUI stopped at its folder-trust prompt, so the hand-off script now uses `codex exec`)
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
