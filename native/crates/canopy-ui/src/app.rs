@@ -81,6 +81,10 @@ pub trait CanopyApp {
     fn ui(&mut self, ui: &mut egui::Ui, host: &mut dyn Host);
     /// Takes files from the space or from Explorer.
     fn receive(&mut self, files: Vec<SharedFile>, host: &mut dyn Host) -> Receipt;
+    /// A drag delivered at a position in egui's window coordinates. Menu sends have no position.
+    fn receive_at(&mut self, files: Vec<SharedFile>, _position: egui::Pos2, host: &mut dyn Host) -> Receipt {
+        self.receive(files, host)
+    }
     /// Opens one of the projects [`AppDescriptor::documents`] listed.
     fn open_document(&mut self, id: &str, host: &mut dyn Host);
     /// Saves open work. Canopy calls it before switching spaces or closing.

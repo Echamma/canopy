@@ -166,6 +166,10 @@ impl Shell {
     }
 
     fn send(&mut self, ctx: &egui::Context, files: Vec<SharedFile>, index: usize) {
+        self.send_at(ctx, files, index, None);
+    }
+
+    fn send_at(&mut self, ctx: &egui::Context, files: Vec<SharedFile>, index: usize, position: Option<egui::Pos2>) {
         self.show_app(ctx, index);
         let slot = &self.slots[index];
         let Some(open) = &mut self.open else { return };
@@ -174,7 +178,10 @@ impl Shell {
             return;
         };
         let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused: true };
-        let receipt = app.receive(files.clone(), &mut host);
+        let receipt = match position {
+            Some(position) => app.receive_at(files.clone(), position, &mut host),
+            None => app.receive(files.clone(), &mut host),
+        };
         let text = if let Some(note) = receipt.note {
             note
         } else if !receipt.skipped.is_empty() {
@@ -378,8 +385,6 @@ impl Shell {
                     open.listed_at = Instant::now() - Duration::from_secs(60);
                     self.toast(format!("Added {added} file{} to Files", if added == 1 { "" } else { "s" }));
                 }
-            } else if let Some(index) = self.open.as_ref().and_then(|o| o.focused) {
-                self.send(&ctx, dropped.into_iter().map(SharedFile::new).collect(), index);
             }
         }
     }
@@ -687,10 +692,16 @@ impl Shell {
                     });
                 }
             }
+            // Explorer drops are routed by their actual pane, even when another pane has keyboard focus.
+            if let Some(at) = ui.input(|i| i.pointer.hover_pos()).filter(|p| body.contains(*p)) {
+                let files: Vec<_> = ui.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf())
+                    .filter(|p| !p.as_os_str().is_empty()).map(SharedFile::new).collect());
+                if !files.is_empty() { drops.push((index, files, Some(at))); }
+            }
             // A file dragged from the sidebar and let go over the pane, that the app didn't take itself.
             if ui.input(|i| i.pointer.any_released()) && ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| body.contains(p)) {
                 if let Some(files) = DragAndDrop::take_payload::<DraggedFiles>(&ctx) {
-                    drops.push((index, files.0.clone()));
+                    drops.push((index, files.0.clone(), ui.input(|i| i.pointer.hover_pos())));
                 }
             }
         }
@@ -712,8 +723,8 @@ impl Shell {
                 open.focused = open.visible.first().copied();
             }
         }
-        for (index, files) in drops {
-            self.send(&ctx, files, index);
+        for (index, files, position) in drops {
+            self.send_at(&ctx, files, index, position);
         }
     }
 }
