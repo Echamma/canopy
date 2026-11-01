@@ -1470,6 +1470,7 @@ dependencies = [
  "eframe",
  "egui",
  "image",
+ "resvg",
  "rfd",
  "rustybuzz",
  "serde",
