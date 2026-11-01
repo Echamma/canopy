@@ -188,7 +188,9 @@ impl Shell {
 
     fn refresh(&mut self) {
         let Some(open) = &mut self.open else { return };
-        if open.listed_at.elapsed() < Duration::from_millis(1500) {
+        // A file an app just exported shows at once; otherwise the folder is read every second and a half.
+        let exported = self.toasts.iter().any(|t| t.file.is_some() && t.at > open.listed_at);
+        if !exported && open.listed_at.elapsed() < Duration::from_millis(1500) {
             return;
         }
         open.listed_at = Instant::now();
