@@ -1,6 +1,6 @@
 # Canopy native rewrite: handoff
 
-Active agent: Codex
+Active agent: none
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
@@ -92,15 +92,17 @@ Spaces are shared with Electron Canopy: `%APPDATA%\Canopy\spaces.json` and the s
   - `17169c3`: Scene settings are always reachable in the inspector, with landscape, portrait, square and custom width/height. `Scene::resize` now matches Electron's separate X/Y position scale and uniform size scale, including recorded motion and linked text fields. A model test covers the portrait conversion.
   - After each commit, Forma `cargo test --offline` (44 pass) and `cargo build --offline`, and Canopy workspace `cargo test --offline` (14 pass) and `cargo build --offline` passed with the shared target directory. No Electron code changed, so npm checks were not rerun. These UI changes have not yet been checked by a window screenshot. `cargo fmt --all -- --check` shows extensive pre-existing formatting differences across the shared path workspaces, so no workspace-wide formatting was applied.
 
+- Codex, 2026-11-01: Forma `canopy` commit `ec54503` adds "Drop onto the screen" to the Draw a move inspector. It creates Electron's seven drop poses and checks linked text, overlapping keys/motions and off-canvas landing. Duration uses the existing Seconds field, clamped to 0.4–10 s. Forma `cargo test --offline` (44 pass) and `cargo build --offline`, and Canopy workspace `cargo test --offline` (14 pass) and `cargo build --offline` passed. This control has not been checked in a window; unlike Electron it does not automatically preview the animation.
+
 ## In progress
 
-- No uncommitted code. Forma remains short of Electron parity: see Next steps. Live Boss AI validation could not run because `GEMINI_API_KEY` is absent from the process environment. No release exe was installed or replaced.
+- No uncommitted code. Forma quick animate rail and drop remain in progress: the drop inspector button exists, but needs a window check, automatic preview, and integration into the quick animate rail. Forma remains short of Electron parity: see Next steps. Live Boss AI validation could not run because `GEMINI_API_KEY` is absent from the process environment. No release exe was installed or replaced.
 
 ## Next steps, in order
 
 1. **Ship when the owner says so:** the release exes build (see Done). Don't put them in `D:\Software` or replace `D:\Software\Canopy.exe` without asking. StreamCuts needs FFmpeg on PATH (or `STREAMCUTS_FFMPEG`), and Python with faster-whisper for captions; a shipped StreamCuts should carry `transcribe.py` next to it (`transcribe::script` looks in the exe's parent folders).
 2. **Validate Boss AI live** when the owner sets `GEMINI_API_KEY` in the process environment. Use a short test VOD, inspect suggestions and create a project; keep the key out of logs. The recorded-response and local HTTP paths already pass. The default model in native code follows the web backend (`GEMINI_MODEL`, default `gemini-3.5-flash`).
-3. **Finish native Forma parity before starting Folio.** Rendering, media, exports, SVG part editing, layer reordering, multi-selection/group movement and scene dimensions now work (see Done). Next in this item: quick animate rail and "Drop onto the screen" (`src\ui\rail.js`, `drop-item` in `animate\motion.js`), arrange as poses (`model\clips.js arrangeAsPoses`), onion skin. Check the four new UI changes in a scratch standalone window or Canopy pane. Electron's MCP automation (`src\automation.js`, `mcp\`) has no native counterpart yet.
+3. **Finish native Forma parity before starting Folio.** Rendering, media, exports, SVG part editing, layer reordering, multi-selection/group movement and scene dimensions now work (see Done). Next in this item: quick animate rail and finish "Drop onto the screen" (see In progress) (`src\ui\rail.js`, `drop-item` in `animate\motion.js`), arrange as poses (`model\clips.js arrangeAsPoses`), onion skin. Check the four new UI changes in a scratch standalone window or Canopy pane. Electron's MCP automation (`src\automation.js`, `mcp\`) has no native counterpart yet.
 4. **Build Folio native** on Folio `canopy` and host it in Canopy `dev`, following `docs\APP_CONTRACT.md`. Verify shared-space round trips and a standalone window.
 5. **Shipping remains owner-gated.** New Rust changes have debug builds and tests but no fresh release build. Before replacing `D:\Software\Canopy.exe`, build the release apps and have the owner test/approve the replacement. Never merge the branches into `main` here.
 
