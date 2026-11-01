@@ -1,6 +1,6 @@
 # Canopy native rewrite: handoff
 
-Active agent: Codex
+Active agent: none
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
@@ -100,16 +100,18 @@ Spaces are shared with Electron Canopy: `%APPDATA%\Canopy\spaces.json` and the s
   - `render::compare::slides_match_what_electron_folio_draws` compares every slide of `native\tests\fixtures\compare.folio.json` with Electron's own render (`electron-<i>.png`, made with `renderer.js` in Electron): 0.31-0.80 mean difference per channel, text antialiasing only. To remake the fixtures: `FOLIO_COMPARE=<dir> cargo test --lib write_native_slides -- --ignored` writes native PNGs; Electron's come from loading `renderer.js` in a hidden BrowserWindow and calling `FolioRender.render` per slide.
   - Checked by window-shot alone and in a Canopy pane (project listed in the sidebar, carousel ZIP in Files). Tests: Folio 8 (+1 ignored).
 
+- Codex, 2026-11-01: Folio `canopy` commit `9cd8a81` adds a selectable front-to-back element list, Send backward / Bring forward and selected text controls (text, size, color); newly added elements are selected and text respects the 30 element limit. Folio `cargo test --offline`: 8 pass, 1 ignored; build passed. Canopy workspace `cargo test --offline`: 14 pass; build passed. A standalone scratch window opened and showed the list, but the scripted interaction failed because the window was not in front; check selection, stacking and controls interactively against Electron.
+
 ## In progress
 
-- No uncommitted code. Live Boss AI validation still waits on `GEMINI_API_KEY`. No release exe was installed or replaced.
+- Folio element controls need the interactive window check described above. No uncommitted code. Live Boss AI validation still waits on `GEMINI_API_KEY`. No release exe was installed or replaced.
 
 ## Next steps, in order
 
 1. **Ship when the owner says so:** the release exes build (see Done). Don't put them in `D:\Software` or replace `D:\Software\Canopy.exe` without asking. StreamCuts needs FFmpeg on PATH (or `STREAMCUTS_FFMPEG`), and Python with faster-whisper for captions; a shipped StreamCuts should carry `transcribe.py` next to it (`transcribe::script` looks in the exe's parent folders).
 2. **Validate Boss AI live** when the owner sets `GEMINI_API_KEY` in the process environment. Use a short test VOD, inspect suggestions and create a project; keep the key out of logs. The recorded-response and local HTTP paths already pass. The default model in native code follows the web backend (`GEMINI_MODEL`, default `gemini-3.5-flash`).
 3. **Forma native matches Electron Forma** apart from Electron's MCP automation (`src\automation.js`, `mcp\`: AI tools driving Forma), which has no native counterpart yet; leave it unless the owner asks.
-4. **Finish Folio native parity** (Electron: `app.js`, `index.html`). Built: see Done. Left: an element list with stacking order (Send backward / Bring forward) and selected text's color and size controls; pasting an image and dropping one on the canvas at the drop point; the preview dialog (arrows, arrow keys); the template library (`assets\references\*`, 36 Figma references: picking one applies its format, theme and layout) and the Navy ribbon starter (`navyProject` in `app.js`); the Fun Tech sample projects (`assets\projects\fun-tech`, copied into the project folder on first use); the project gallery with cover previews and search; Open a project file / Save a copy to file; the recovery copy on close. Check each against Electron by window-shot.
+4. **Finish Folio native parity** (Electron: `app.js`, `index.html`). Built: see Done. Left: verify the new element list and controls in a window; pasting an image and dropping one on the canvas at the drop point; the preview dialog (arrows, arrow keys); the template library (`assets\references\*`, 36 Figma references: picking one applies its format, theme and layout) and the Navy ribbon starter (`navyProject` in `app.js`); the Fun Tech sample projects (`assets\projects\fun-tech`, copied into the project folder on first use); the project gallery with cover previews and search; Open a project file / Save a copy to file; the recovery copy on close. Check each against Electron by window-shot.
 5. **Shipping remains owner-gated.** New Rust changes have debug builds and tests but no fresh release build. Before replacing `D:\Software\Canopy.exe`, build the release apps and have the owner test/approve the replacement. Never merge the branches into `main` here.
 
 ## Build and test
