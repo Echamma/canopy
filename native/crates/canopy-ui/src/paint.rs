@@ -107,6 +107,7 @@ pub enum Icon {
     SkipForward,
     Magnet,
     Captions,
+    Text,
 }
 
 /// Draws a rounded line icon (1.75 stroke on a 24 grid) filling `rect`.
@@ -225,6 +226,11 @@ pub fn icon(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[(7.0, 11.0), (11.0, 11.0)]);
             line(&[(13.0, 11.0), (17.0, 11.0)]);
             line(&[(7.0, 15.0), (15.0, 15.0)]);
+        }
+        Icon::Text => {
+            line(&[(6.0, 6.0), (18.0, 6.0)]);
+            line(&[(12.0, 6.0), (12.0, 19.0)]);
+            line(&[(9.0, 19.0), (15.0, 19.0)]);
         }
         Icon::SkipBack => {
             line(&[(6.0, 5.0), (6.0, 19.0)]);
