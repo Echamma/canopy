@@ -385,6 +385,10 @@ impl Shell {
                     open.listed_at = Instant::now() - Duration::from_secs(60);
                     self.toast(format!("Added {added} file{} to Files", if added == 1 { "" } else { "s" }));
                 }
+            } else if !main.contains(at) {
+                if let Some(index) = self.open.as_ref().and_then(|o| o.focused) {
+                    self.send(&ctx, dropped.into_iter().map(SharedFile::new).collect(), index);
+                }
             }
         }
     }
@@ -693,7 +697,7 @@ impl Shell {
                 }
             }
             // Explorer drops are routed by their actual pane, even when another pane has keyboard focus.
-            if let Some(at) = ui.input(|i| i.pointer.hover_pos()).filter(|p| body.contains(*p)) {
+            if let Some(at) = ui.input(|i| i.pointer.hover_pos()).filter(|p| pane.contains(*p)) {
                 let files: Vec<_> = ui.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf())
                     .filter(|p| !p.as_os_str().is_empty()).map(SharedFile::new).collect());
                 if !files.is_empty() { drops.push((index, files, Some(at))); }
