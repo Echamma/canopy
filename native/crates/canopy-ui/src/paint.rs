@@ -106,6 +106,7 @@ pub enum Icon {
     SkipBack,
     SkipForward,
     Magnet,
+    Captions,
 }
 
 /// Draws a rounded line icon (1.75 stroke on a 24 grid) filling `rect`.
@@ -218,6 +219,12 @@ pub fn icon(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             for (x, y) in [(4.0, 4.0), (13.0, 4.0), (4.0, 13.0), (13.0, 13.0)] {
                 painter.rect_filled(Rect::from_min_max(p(x, y), p(x + 7.0, y + 7.0)), (1.5 * scale) as u8, color);
             }
+        }
+        Icon::Captions => {
+            painter.rect_stroke(Rect::from_min_max(p(3.0, 5.0), p(21.0, 19.0)), (2.0 * scale) as u8, stroke, egui::StrokeKind::Middle);
+            line(&[(7.0, 11.0), (11.0, 11.0)]);
+            line(&[(13.0, 11.0), (17.0, 11.0)]);
+            line(&[(7.0, 15.0), (15.0, 15.0)]);
         }
         Icon::SkipBack => {
             line(&[(6.0, 5.0), (6.0, 19.0)]);

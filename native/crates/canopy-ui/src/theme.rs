@@ -132,6 +132,11 @@ pub mod font {
     }
 }
 
+/// The face captions use: Nunito ExtraBold (`font::display` on screen), also handed to FFmpeg when an export burns
+/// captions in. Its name table says "Nunito ExtraLight", left over from the variable font it was cut from, and that is
+/// the name FFmpeg finds it by.
+pub const CAPTION_FONT: (&str, &[u8]) = ("Nunito ExtraLight", include_bytes!("../fonts/Nunito-ExtraBold.ttf"));
+
 macro_rules! font_files {
     ($($name:literal),* $(,)?) => {
         [$(($name, include_bytes!(concat!("../fonts/", $name, ".ttf")).as_slice())),*]
