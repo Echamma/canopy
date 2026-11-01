@@ -10,3 +10,8 @@ license = "UNLICENSED"
 [profile.dev.package."*"]
 # Dependencies (image decoding, egui) are much faster optimized; Canopy's own code stays quick to rebuild.
 opt-level = 2
+
+# Release builds: drop debug symbols and let the linker see across crates, which roughly halves the exe.
+[profile.release]
+strip = true
+lto = "thin"
