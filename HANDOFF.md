@@ -4,6 +4,8 @@ Active agent: none (Codex handed back on 2026-11-01; Claude can resume after its
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
+Claude hands over with `scripts\handoff-to-codex.ps1`. Since 2026-11-01 it queues the prompt into the owner's Codex session in the ChatGPT desktop app (`codex queue --thread <id>`; the id is in `%LOCALAPPDATA%\canopy-toolchain\codex-thread.txt`), where the session's own model runs (the app offers GPT-6.1 Terra; the CLI refuses it on this account). The script returns at once, so its terminal tab going idle doesn't mean Codex is done: this file's Active agent line does, and the session's log is `~\.codex\sessions\<date>\rollout-*-<id>.jsonl` (a `task_complete` event after the last user message means its turn ended). Without a session id, or if queueing fails, the script runs `codex exec` in the terminal as before.
+
 ## Goal
 
 The owner asked for everything on the Canopy branches to be rewritten in Rust, apps included, with **native UI** (no web views), starting with **Canopy and StreamCuts**. Forma and Folio follow later. The Electron versions keep working meanwhile: `D:\Software\Canopy.exe`, `Forma.exe` and the Folio exe are not touched until the native ones reach parity.
