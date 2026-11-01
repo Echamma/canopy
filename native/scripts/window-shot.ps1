@@ -7,6 +7,7 @@
 #   click:<x>,<y>    rclick:<x>,<y>    dclick:<x>,<y>    drag:<x1>,<y1>,<x2>,<y2>
 #   down:<x>,<y>     move:<x>,<y>      up             (a drag in parts, to take shots in the middle)
 #   wheel:<x>,<y>,<notches>   (scrolls with the mouse over x,y; negative notches scroll down)
+#   hold:<shift|ctrl|alt>   release:<shift|ctrl|alt>   (a modifier held across clicks and drags, e.g. Shift-click)
 #   wait:<ms>        shot:<png>
 # Keys and clicks only go out while the app's window is in front, so they never land in another window.
 param([string]$Exe, [string]$Out = "", [int]$Wait = 5, [string[]]$AppArgs = @(), [string]$AppHome = "", [string]$Log = "", [string[]]$Steps = @())
@@ -24,6 +25,7 @@ public static class Win {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
   // The window's visible frame: GetWindowRect also counts the invisible resize border.
   [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attribute, out RECT r, int size);
@@ -81,6 +83,8 @@ function Save-Shot([string]$path) {
 }
 
 $held = $false
+$modifiers = @{ shift = [byte]0x10; ctrl = [byte]0x11; alt = [byte]0x12 }
+$heldKeys = @()
 try {
   foreach ($step in $Steps) {
     $colon = $step.IndexOf(":")
@@ -102,6 +106,8 @@ try {
       "move" { Assert-InFront; Glide $n[0] $n[1] }
       "up" { [Win]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero); $held = $false; Start-Sleep -Milliseconds 150 }
       "wheel" { Assert-InFront; Move-To $n[0] $n[1]; [Win]::mouse_event(0x0800, 0, 0, [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]($n[2] * 120)), 0), [UIntPtr]::Zero); Start-Sleep -Milliseconds 200 }
+      "hold" { Assert-InFront; [Win]::keybd_event($modifiers[$value], 0, 0, [UIntPtr]::Zero); $heldKeys += $value; Start-Sleep -Milliseconds 60 }
+      "release" { [Win]::keybd_event($modifiers[$value], 0, 2, [UIntPtr]::Zero); $heldKeys = @($heldKeys | Where-Object { $_ -ne $value }); Start-Sleep -Milliseconds 60 }
       "wait" { Start-Sleep -Milliseconds $n[0] }
       "shot" { Save-Shot $value }
       default { throw "Unknown step: $step" }
@@ -110,6 +116,7 @@ try {
   if ($Out) { Save-Shot $Out }
 } finally {
   if ($held) { [Win]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero) }
+  foreach ($key in $heldKeys) { [Win]::keybd_event($modifiers[$key], 0, 2, [UIntPtr]::Zero) }
   $process.CloseMainWindow() | Out-Null
   if (-not $process.WaitForExit(10000)) { Write-Host "The app didn't close in 10 s" }
 }
