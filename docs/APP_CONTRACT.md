@@ -62,6 +62,10 @@ StreamCuts runs as its local web app. Canopy starts it like `StreamCutsLauncher`
 
 Downloads from StreamCuts (clip exports) land in `Files`. Full video exports use StreamCuts' own save picker, which streams long videos to disk; save them into the space's `Files` folder to share them.
 
+## Native apps: drop positions
+
+Native apps implement `canopy_ui::CanopyApp`. Menu sends and command-line opens call `receive`; a drag onto a pane or standalone window calls `receive_at` with the drop position in egui window coordinates. Its default implementation delegates to `receive`, so apps that do not place files at the pointer need no special handling. A native app can compare the position with its last drawn content rectangle and convert it to document coordinates. Explorer drops are routed to the pane under the pointer; files dropped onto the sidebar go to the space's Files folder.
+
 ## Moving files between apps
 
 - **Drag** a file from the sidebar onto any app. It arrives as a normal file drop, so every app's own drop handling works.
