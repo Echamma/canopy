@@ -1,5 +1,5 @@
 //! The shell: "Where to?" (your spaces) and a space (app tabs, the sidebar of projects and files, one or two panes).
-//! Native apps draw inside their pane; Folio, until it is native, opens its own exe.
+//! Every app draws natively inside its pane.
 
 use canopy_core::files::{FileEntry, copy_into, list_files};
 use canopy_core::spaces::{Space, SpacePaths, Spaces};
@@ -14,7 +14,9 @@ use std::time::{Duration, Instant};
 
 enum Kind {
     Native(&'static AppDescriptor),
-    /// Not rebuilt in Rust yet: the pane offers the app's current exe.
+    /// Not rebuilt in Rust yet: the pane offers the app's current exe. Forma, Folio and StreamCuts are all native
+    /// now; this stays for an app that joins Canopy before it is.
+    #[allow(dead_code)]
     External { exe: PathBuf, accepts: fn(&SharedFile) -> bool },
 }
 
@@ -27,12 +29,11 @@ struct Slot {
 }
 
 fn catalog() -> Vec<Slot> {
-    let software = PathBuf::from("D:\\Software");
     vec![
         Slot { name: "Forma", description: "Animate shapes and pictures", accent: Accent::Clay, initial: "Fo",
             kind: Kind::Native(&forma_native::DESCRIPTOR) },
         Slot { name: "Folio", description: "Make carousels", accent: Accent::Sky, initial: "Fl",
-            kind: Kind::External { exe: software.join("Folio Carousel Studio.exe"), accepts: |_| false } },
+            kind: Kind::Native(&folio_native::DESCRIPTOR) },
         Slot { name: "StreamCuts", description: "Edit videos and cut clips", accent: Accent::Berry, initial: "SC", kind: Kind::Native(&streamcuts::DESCRIPTOR) },
     ]
 }
