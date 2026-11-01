@@ -1,6 +1,6 @@
 # Canopy native rewrite: handoff
 
-Active agent: none (Claude worked 2026-11-01 02:40-04:45 local and handed off to Codex; Claude resumes after its quota resets at about 07:30 local)
+Active agent: none (Claude worked 2026-11-01 02:40-04:20 local and handed off to Codex; Claude resumes after its quota resets at about 07:30 local)
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
@@ -57,6 +57,7 @@ Spaces are shared with Electron Canopy: `%APPDATA%\Canopy\spaces.json` and the s
 - Fades, framing and titles (2026-11-01): clips have `fade_in`/`fade_out` (export: alpha `fade` + `afade`; preview darkens; the mixer applies the envelope) and `Framing::Fit`/`Fill { x, y }` (one FFmpeg filter, `Framing::filter`, used by export, stills and frame streams, so preview = export); a "Fades & framing" menu for the selected clip. `Project.titles` (text at a height and size, drag to move on a Titles lane, "Size & place" menu; burned in through the same ASS file as captions with `\pos`/`\fs`; a title past the clips makes an end card). Checked by export frames against the preview.
 - Color and speed (2026-11-01): `Clip.grade` (`Grade`: brightness/contrast/saturation → FFmpeg `eq`) and `Clip.speed` (0.25-4×; `source_time` scales by it, `Project::set_speed` keeps the source stretch and stops at the next clip, export uses `setpts` + an `atempo` chain from `ffmpeg::atempo`, preview streams and playback sound play at it, transcription maps through it). Framing and grade travel together as `Picture`, whose `filter` export, stills and frame streams all use. All of a clip's settings are in its "Clip" menu in the timeline bar.
 - Also 2026-11-01: an "Even loudness" toggle beside Export (`Project.even_loudness`: one pass of `loudnorm` to -14 LUFS on the final mix); missing source files are marked in Media ("click to find it", `find_media`), named on the preview, and stop Export with a clear message; captions record their clip (`Caption.clip`) and move with it on move, ripple delete and split (captions without one go by the clip they sit inside).
+- Titles trim by their edges in the Titles lane; unused media can be removed (right-click in Media); dragging up or down on the preview moves the selected title, or with a caption selected, where captions sit (`Project.caption_bottom`).
 - Waveforms and filmstrips are cached on disk (`cache.rs`: `<data_dir>/looks/<hash of path, size, mtime>.wave|.strip`), so reopening a project skips decoding.
 - Release builds (`[profile.release]` strip + thin LTO in both workspaces): canopy.exe and streamcuts.exe about 24-25 MB each, ~4 minutes each from scratch. The release Canopy was checked by running it on a scratch space. Nothing was copied to `D:\Software`.
 - Long files (2026-11-01, a 1-hour 320x180 file with sound, shared FFmpeg): probe 95 ms, a still at 45:00 115 ms, filmstrip 1.1 s, waveform 1.8 s (both on their own threads), so a 12-hour stream is ~13 s and ~22 s.
