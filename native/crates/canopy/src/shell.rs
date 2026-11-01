@@ -19,7 +19,6 @@ enum Kind {
 }
 
 struct Slot {
-    id: &'static str,
     name: &'static str,
     description: &'static str,
     accent: Accent,
@@ -30,11 +29,11 @@ struct Slot {
 fn catalog() -> Vec<Slot> {
     let software = PathBuf::from("D:\\Software");
     vec![
-        Slot { id: "forma", name: "Forma", description: "Animate shapes and pictures", accent: Accent::Clay, initial: "Fo",
+        Slot { name: "Forma", description: "Animate shapes and pictures", accent: Accent::Clay, initial: "Fo",
             kind: Kind::External { exe: software.join("Forma.exe"), accepts: |f| f.name.to_lowercase().ends_with(".forma") } },
-        Slot { id: "folio", name: "Folio", description: "Make carousels", accent: Accent::Sky, initial: "Fl",
+        Slot { name: "Folio", description: "Make carousels", accent: Accent::Sky, initial: "Fl",
             kind: Kind::External { exe: software.join("Folio Carousel Studio.exe"), accepts: |_| false } },
-        Slot { id: "streamcuts", name: "StreamCuts", description: "Edit videos and cut clips", accent: Accent::Berry, initial: "SC", kind: Kind::Native(&streamcuts::DESCRIPTOR) },
+        Slot { name: "StreamCuts", description: "Edit videos and cut clips", accent: Accent::Berry, initial: "SC", kind: Kind::Native(&streamcuts::DESCRIPTOR) },
     ]
 }
 
@@ -59,6 +58,7 @@ struct PaneHost<'a> {
     toasts: &'a mut Vec<Toast>,
     slots: &'a [Slot],
     from: usize,
+    focused: bool,
 }
 
 impl Host for PaneHost<'_> {
@@ -69,6 +69,9 @@ impl Host for PaneHost<'_> {
         let file = SharedFile::new(&path);
         let targets = self.slots.iter().enumerate().filter(|(i, s)| *i != self.from && matches!(s.kind, Kind::Native(_)) && s.accepts(&file)).map(|(i, _)| i).collect();
         self.toasts.push(Toast { text: format!("Saved {} to Files", file.name), file: Some(path), targets, at: Instant::now() });
+    }
+    fn focused(&self) -> bool {
+        self.focused
     }
 }
 
@@ -169,7 +172,7 @@ impl Shell {
             self.toasts.push(Toast { text: format!("{} isn't in Canopy yet; open it from its own window", slot.name), file: None, targets: Vec::new(), at: Instant::now() });
             return;
         };
-        let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index };
+        let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused: true };
         let receipt = app.receive(files.clone(), &mut host);
         let text = if let Some(note) = receipt.note {
             note
@@ -223,7 +226,7 @@ impl Shell {
         let mut forget = None;
         for (space, available) in &spaces {
             let area = Rect::from_min_size(pos2(x, top), vec2(tile, 96.0));
-            let response = ui.interact(area, ui.id().with(("space", &space.id)), Sense::click());
+            let response = ui.interact(area, ui.scope_id().with(("space", &space.id)), Sense::click());
             let mark = Rect::from_center_size(pos2(area.center().x, area.top() + 34.0), vec2(68.0, 68.0));
             let fill = Accent::from_name(&space.color).color();
             leaf(ui.painter(), mark, if *available { fill } else { fill.gamma_multiply(0.35) });
@@ -248,7 +251,7 @@ impl Shell {
             x += tile + 24.0;
         }
         let area = Rect::from_min_size(pos2(x, top), vec2(tile, 96.0));
-        let response = ui.interact(area, ui.id().with("new-space"), Sense::click());
+        let response = ui.interact(area, ui.scope_id().with("new-space"), Sense::click());
         let mark = Rect::from_center_size(pos2(area.center().x, area.top() + 34.0), vec2(68.0, 68.0));
         let edge = if response.hovered() { color::SELECT_LINE } else { egui::Color32::from_rgba_unmultiplied(238, 242, 234, 72) };
         ui.painter().rect_stroke(mark, 12, egui::Stroke::new(1.5, edge), egui::StrokeKind::Inside);
@@ -270,7 +273,7 @@ impl Shell {
     fn new_space_dialog(&mut self, ui: &mut Ui) {
         let Some(form) = &mut self.new_space else { return };
         let mut create = false;
-        let modal = egui::Modal::new(ui.id().with("new-space-dialog")).show(ui.ctx(), |ui| {
+        let modal = egui::Modal::new(ui.scope_id().with("new-space-dialog")).show(ui.ctx(), |ui| {
             ui.set_width(400.0);
             ui.label(egui::RichText::new("Name your space").font(font::display(22.0)));
             ui.label(canopy_ui::muted("A space keeps your Forma, Folio and StreamCuts work together, with the files they share."));
@@ -521,7 +524,7 @@ impl Shell {
                         canopy_core::files::Kind::File => Icon::File,
                     };
                     let size = format_size(file.size);
-                    let drag = ui.dnd_drag_source(ui.id().with(("file", &file.name)), DraggedFiles(vec![shared.clone()]), |ui| {
+                    let drag = ui.dnd_drag_source(ui.scope_id().with(("file", &file.name)), DraggedFiles(vec![shared.clone()]), |ui| {
                         (Row { title: &file.name, detail: &size, mark: RowMark::Icon(mark), highlighted: false }).show(ui)
                     });
                     let row = drag.inner;
@@ -557,7 +560,7 @@ impl Shell {
         for (index, slot) in slots.iter().enumerate() {
             let x = dock.left() + dock.width() * (index as f32 + 0.5) / slots.len() as f32;
             let button = Rect::from_center_size(pos2(x, dock.center().y), vec2(30.0, 30.0));
-            let response = ui.interact(button, ui.id().with(("dock", index)), Sense::click());
+            let response = ui.interact(button, ui.scope_id().with(("dock", index)), Sense::click());
             if response.hovered() {
                 ui.painter().rect_filled(button, 8, color::VEIL_HOVER);
             }
@@ -583,7 +586,7 @@ impl Shell {
             self.show_app(&ctx, index);
             if let Some(open) = &mut self.open {
                 if let Some(app) = open.apps.get_mut(&index) {
-                    let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index };
+                    let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused: true };
                     app.open_document(&id, &mut host);
                 }
             }
@@ -606,7 +609,7 @@ impl Shell {
             let left = center.x - spacing * (self.slots.len() as f32 - 1.0) / 2.0;
             for (index, slot) in self.slots.iter().enumerate() {
                 let tile = Rect::from_center_size(pos2(left + spacing * index as f32, center.y), vec2(58.0, 58.0));
-                let response = ui.interact(tile.expand2(vec2(30.0, 30.0)), ui.id().with(("tile", index)), Sense::click());
+                let response = ui.interact(tile.expand2(vec2(30.0, 30.0)), ui.scope_id().with(("tile", index)), Sense::click());
                 ui.painter().rect_filled(tile, 12, if response.hovered() { color::VEIL_STRONG } else { color::VEIL });
                 ui.painter().rect_stroke(tile, 12, egui::Stroke::new(1.0, color::HAIRLINE), egui::StrokeKind::Inside);
                 leaf_with_initial(ui.painter(), Rect::from_center_size(tile.center(), vec2(30.0, 30.0)), slot.accent, slot.initial);
@@ -657,7 +660,7 @@ impl Shell {
                 Kind::Native(_) => {
                     let Some(open) = &mut self.open else { return };
                     if let Some(app) = open.apps.get_mut(&index) {
-                        let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index };
+                        let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused };
                         ui.scope_builder(UiBuilder::new().max_rect(body), |ui| {
                             ui.set_clip_rect(body);
                             app.ui(ui, &mut host);
@@ -768,7 +771,7 @@ mod tests {
         let space = Space { id: "test".into(), name: "Test".into(), color: "leaf".into(), created_at: 0, dir: dir.clone(), last_opened_at: 0 };
         let info = SpaceInfo { id: space.id.clone(), name: space.name.clone(), dir: dir.clone() };
         let slots = ["a", "b", "c"]
-            .map(|id| Slot { id, name: id, description: "", accent: Accent::Leaf, initial: "A", kind: Kind::External { exe: PathBuf::new(), accepts: |_| true } })
+            .map(|name| Slot { name, description: "", accent: Accent::Leaf, initial: "A", kind: Kind::External { exe: PathBuf::new(), accepts: |_| true } })
             .into();
         let open = Open { space, info, apps: HashMap::new(), visible: Vec::new(), focused: None, split: false, files: Vec::new(), documents: Vec::new(), listed_at: Instant::now(), search: String::new() };
         Shell { spaces: Spaces::new(dir.join("spaces.json"), &dir), slots, open: Some(open), toasts: Vec::new(), new_space: None, home_note: String::new() }

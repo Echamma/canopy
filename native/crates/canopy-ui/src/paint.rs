@@ -21,7 +21,7 @@ fn glow(painter: &Painter, center: Pos2, radius: Vec2, color: Color32) {
 }
 
 fn dot_texture(ctx: &egui::Context) -> TextureHandle {
-    let id = egui::Id::new("canopy-ground-dots");
+    let id = egui::Id::unique("canopy-ground-dots");
     if let Some(texture) = ctx.data(|data| data.get_temp::<TextureHandle>(id)) {
         return texture;
     }

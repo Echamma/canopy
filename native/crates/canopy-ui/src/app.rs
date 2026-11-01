@@ -70,6 +70,10 @@ pub trait Host {
     fn toast(&mut self, text: String);
     /// A file the app just finished writing to its exports folder. Canopy offers to send it on to the other apps.
     fn exported(&mut self, path: PathBuf);
+    /// Whether the app's pane has the keyboard: with two panes side by side, only the focused one takes shortcuts.
+    fn focused(&self) -> bool {
+        true
+    }
 }
 
 pub trait CanopyApp {

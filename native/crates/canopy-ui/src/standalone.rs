@@ -53,7 +53,7 @@ impl eframe::App for Standalone {
 
         self.toasts.0.retain(|(_, at)| at.elapsed() < Duration::from_secs(5));
         if let Some((text, _)) = self.toasts.0.last() {
-            let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("standalone-toast")));
+            let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("standalone-toast")));
             let galley = painter.layout_no_wrap(text.clone(), font::ui(13.0), color::SELECT_INK);
             let size = galley.size() + vec2(24.0, 12.0);
             let toast = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 28.0), size);
