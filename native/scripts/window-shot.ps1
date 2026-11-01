@@ -6,6 +6,7 @@
 #   key:<SendKeys keys>   e.g. "key: " (Space), "key:^z" (Ctrl+Z), "key:^{TAB}", "key:{DEL}"
 #   click:<x>,<y>    rclick:<x>,<y>    dclick:<x>,<y>    drag:<x1>,<y1>,<x2>,<y2>
 #   down:<x>,<y>     move:<x>,<y>      up             (a drag in parts, to take shots in the middle)
+#   wheel:<x>,<y>,<notches>   (scrolls with the mouse over x,y; negative notches scroll down)
 #   wait:<ms>        shot:<png>
 # Keys and clicks only go out while the app's window is in front, so they never land in another window.
 param([string]$Exe, [string]$Out = "", [int]$Wait = 5, [string[]]$AppArgs = @(), [string]$AppHome = "", [string]$Log = "", [string[]]$Steps = @())
@@ -100,6 +101,7 @@ try {
       "down" { Assert-InFront; Move-To $n[0] $n[1]; [Win]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero); $held = $true; Start-Sleep -Milliseconds 80 }
       "move" { Assert-InFront; Glide $n[0] $n[1] }
       "up" { [Win]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero); $held = $false; Start-Sleep -Milliseconds 150 }
+      "wheel" { Assert-InFront; Move-To $n[0] $n[1]; [Win]::mouse_event(0x0800, 0, 0, [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]($n[2] * 120)), 0), [UIntPtr]::Zero); Start-Sleep -Milliseconds 200 }
       "wait" { Start-Sleep -Milliseconds $n[0] }
       "shot" { Save-Shot $value }
       default { throw "Unknown step: $step" }
