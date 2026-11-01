@@ -108,6 +108,7 @@ pub enum Icon {
     Magnet,
     Captions,
     Text,
+    Lock,
 }
 
 /// Draws a rounded line icon (1.75 stroke on a 24 grid) filling `rect`.
@@ -226,6 +227,10 @@ pub fn icon(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[(7.0, 11.0), (11.0, 11.0)]);
             line(&[(13.0, 11.0), (17.0, 11.0)]);
             line(&[(7.0, 15.0), (15.0, 15.0)]);
+        }
+        Icon::Lock => {
+            painter.rect_stroke(Rect::from_min_max(p(5.0, 11.0), p(19.0, 21.0)), (2.0 * scale) as u8, stroke, egui::StrokeKind::Middle);
+            line(&[(8.0, 11.0), (8.0, 7.5), (9.2, 4.8), (12.0, 3.6), (14.8, 4.8), (16.0, 7.5), (16.0, 11.0)]);
         }
         Icon::Text => {
             line(&[(6.0, 6.0), (18.0, 6.0)]);
