@@ -26,6 +26,41 @@ impl SharedFile {
 #[derive(Debug, Clone)]
 pub struct DraggedFiles(pub Vec<SharedFile>);
 
+/// Position of an OS file drop in egui window coordinates. Windows OLE drag events do not update
+/// winit's cursor position, so query the screen cursor at delivery instead of using a stale hover.
+pub fn os_drop_position(ctx: &egui::Context) -> Option<egui::Pos2> {
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        struct Point { x: i32, y: i32 }
+        #[link(name = "user32")]
+        unsafe extern "system" { fn GetCursorPos(point: *mut Point) -> i32; }
+        let mut point = Point { x: 0, y: 0 };
+        // GetCursorPos writes a POINT and has no retained pointer.
+        if unsafe { GetCursorPos(&mut point) } != 0 {
+            if let Some(rect) = ctx.input(|i| i.viewport().inner_rect) {
+                let scale = ctx.pixels_per_point();
+                return Some(screen_to_window(egui::pos2(point.x as f32, point.y as f32), rect, scale));
+            }
+        }
+    }
+    ctx.input(|i| i.pointer.hover_pos())
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn screen_to_window(screen: egui::Pos2, inner_rect: egui::Rect, pixels_per_point: f32) -> egui::Pos2 {
+    egui::pos2(screen.x / pixels_per_point - inner_rect.left(), screen.y / pixels_per_point - inner_rect.top())
+}
+
+#[cfg(test)]
+mod drop_tests {
+    #[test]
+    fn physical_screen_position_is_converted_to_logical_window_coordinates() {
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 200.0), egui::vec2(800.0, 600.0));
+        assert_eq!(super::screen_to_window(egui::pos2(225.0, 450.0), rect, 1.5), egui::pos2(50.0, 100.0));
+    }
+}
+
 /// A project an app keeps in a space, for Canopy's sidebar.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Document {

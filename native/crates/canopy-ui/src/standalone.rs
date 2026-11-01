@@ -33,7 +33,7 @@ impl eframe::App for Standalone {
         paint_ground(ui.painter(), rect, Mood::Ember);
         let dropped: Vec<SharedFile> = ui.ctx().input(|input| input.raw.dropped_files.iter().map(|file| file.path().to_path_buf()).filter(|path| !path.as_os_str().is_empty()).map(SharedFile::new).collect());
         if !dropped.is_empty() {
-            let position = ui.ctx().input(|input| input.pointer.hover_pos());
+            let position = crate::app::os_drop_position(ui.ctx());
             let receipt = match position {
                 Some(position) => self.app.receive_at(dropped, position, &mut self.toasts),
                 None => self.app.receive(dropped, &mut self.toasts),

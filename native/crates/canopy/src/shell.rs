@@ -377,7 +377,7 @@ impl Shell {
         // Files dropped from Explorer: onto the sidebar they join the space's Files; onto a pane, the app gets them.
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
         if !dropped.is_empty() {
-            let at = ctx.input(|i| i.pointer.hover_pos()).unwrap_or(sidebar.center());
+            let at = canopy_ui::os_drop_position(&ctx).unwrap_or(sidebar.center());
             if sidebar.contains(at) || self.open.as_ref().is_some_and(|o| o.visible.is_empty()) {
                 if let Some(open) = &mut self.open {
                     let files = SpacePaths::new(&open.space.dir).files();
@@ -697,10 +697,12 @@ impl Shell {
                 }
             }
             // Explorer drops are routed by their actual pane, even when another pane has keyboard focus.
-            if let Some(at) = ui.input(|i| i.pointer.hover_pos()).filter(|p| pane.contains(*p)) {
-                let files: Vec<_> = ui.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf())
-                    .filter(|p| !p.as_os_str().is_empty()).map(SharedFile::new).collect());
-                if !files.is_empty() { drops.push((index, files, Some(at))); }
+            if ui.input(|i| !i.raw.dropped_files.is_empty()) {
+                if let Some(at) = canopy_ui::os_drop_position(&ctx).filter(|p| pane.contains(*p)) {
+                    let files: Vec<_> = ui.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf())
+                        .filter(|p| !p.as_os_str().is_empty()).map(SharedFile::new).collect());
+                    if !files.is_empty() { drops.push((index, files, Some(at))); }
+                }
             }
             // A file dragged from the sidebar and let go over the pane, that the app didn't take itself.
             if ui.input(|i| i.pointer.any_released()) && ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| body.contains(p)) {

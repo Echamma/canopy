@@ -64,7 +64,7 @@ Downloads from StreamCuts (clip exports) land in `Files`. Full video exports use
 
 ## Native apps: drop positions
 
-Native apps implement `canopy_ui::CanopyApp`. Menu sends and command-line opens call `receive`; a drag onto a pane or standalone window calls `receive_at` with the drop position in egui window coordinates. Its default implementation delegates to `receive`, so apps that do not place files at the pointer need no special handling. A native app can compare the position with its last drawn content rectangle and convert it to document coordinates. Explorer drops are routed to the pane under the pointer; files dropped onto the sidebar go to the space's Files folder.
+Native apps implement `canopy_ui::CanopyApp`. Menu sends and command-line opens call `receive`; a drag onto a pane or standalone window calls `receive_at` with the drop position in egui window coordinates. Its default implementation delegates to `receive`, so apps that do not place files at the pointer need no special handling. A native app can compare the position with its last drawn content rectangle and convert it to document coordinates. Explorer drops are routed to the pane under the pointer; files dropped onto the sidebar go to the space's Files folder. On Windows, `os_drop_position` reads the screen cursor when the drop is delivered because winit's OLE drag handler does not forward drag coordinates; this position is therefore approximate if the pointer moves before the next frame.
 
 ## Moving files between apps
 
