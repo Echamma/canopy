@@ -13,13 +13,24 @@ $canopy = "D:\projects\canopy\native"
 $streamcuts = "D:\projects\streamcuts"
 $forma = "D:\projects\forma-studio"
 $folio = "D:\projects\folio-carousel-studio"
+# Cargo reports progress on stderr. When this script's output is piped or redirected, Windows PowerShell would turn
+# each of those lines into an error and (with Stop) end the script, so builds run with Continue and pass lines on.
+function Build-Release([string]$dir, [string]$what, [string]$target = "") {
+  $ErrorActionPreference = "Continue"
+  Push-Location $dir
+  if ($target) { $env:CARGO_TARGET_DIR = $target } else { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue }
+  cargo build --release 2>&1 | ForEach-Object { "$_" }
+  $code = $LASTEXITCODE
+  Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
+  Pop-Location
+  if ($code) { throw "$what build failed" }
+}
 if ($Build) {
-  Push-Location "$canopy"; cargo build --release; if ($LASTEXITCODE) { throw "Canopy build failed" }; Pop-Location
-  Push-Location "$streamcuts\native"; cargo build --release; if ($LASTEXITCODE) { throw "StreamCuts build failed" }; Pop-Location
+  Build-Release "$canopy" "Canopy"
+  Build-Release "$streamcuts\native" "StreamCuts"
   # Forma and Folio alone; Forma keeps its own target folder so its checkout stays clean.
-  Push-Location "$forma\native"; $env:CARGO_TARGET_DIR = "$canopy\target\forma-standalone"; cargo build --release; if ($LASTEXITCODE) { throw "Forma build failed" }; Pop-Location
-  Push-Location "$folio\native"; $env:CARGO_TARGET_DIR = "$canopy\target"; cargo build --release; if ($LASTEXITCODE) { throw "Folio build failed" }; Pop-Location
-  Remove-Item Env:CARGO_TARGET_DIR
+  Build-Release "$forma\native" "Forma" "$canopy\target\forma-standalone"
+  Build-Release "$folio\native" "Folio" "$canopy\target"
 }
 $apps = [ordered]@{
   "Canopy.exe" = "$canopy\target\release\canopy.exe"
