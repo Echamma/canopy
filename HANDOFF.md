@@ -1,10 +1,10 @@
 # Canopy native rewrite: handoff
 
-Active agent: none (Claude stopped 2026-11-01 at 97 % of its weekly quota; it resumes after the weekly reset, 2026-11-02 23:00 UTC)
+Active agent: Claude (2026-11-03, from 12:30 local)
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
-Claude hands over with `scripts\handoff-to-codex.ps1`. Since 2026-11-01 it queues the prompt into the owner's Codex session in the ChatGPT desktop app (`codex queue --thread <id>`; the id is in `%LOCALAPPDATA%\canopy-toolchain\codex-thread.txt`), where the session's own model runs (the app offers GPT-6.1 Terra; the CLI refuses it on this account). The script returns at once, so its terminal tab going idle doesn't mean Codex is done: this file's Active agent line does, and the session's log is `~\.codex\sessions\<date>\rollout-*-<id>.jsonl` (a `task_complete` event after the last user message means its turn ended). Without a session id, or if queueing fails, the script runs `codex exec` in the terminal as before.
+Since 2026-11-03 the owner has dropped Codex: Claude finishes the next steps alone and schedules its own resumes when its quota runs low (Codex's turns on 2026-11-02 committed nothing). What follows is how the hand-off worked, kept for reference. Claude handed over with `scripts\handoff-to-codex.ps1`. Since 2026-11-01 it queues the prompt into the owner's Codex session in the ChatGPT desktop app (`codex queue --thread <id>`; the id is in `%LOCALAPPDATA%\canopy-toolchain\codex-thread.txt`), where the session's own model runs (the app offers GPT-6.1 Terra; the CLI refuses it on this account). The script returns at once, so its terminal tab going idle doesn't mean Codex is done: this file's Active agent line does, and the session's log is `~\.codex\sessions\<date>\rollout-*-<id>.jsonl` (a `task_complete` event after the last user message means its turn ended). Without a session id, or if queueing fails, the script runs `codex exec` in the terminal as before.
 
 ## Goal
 
