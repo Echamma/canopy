@@ -149,3 +149,22 @@ pub fn muted(text: impl Into<String>) -> egui::RichText {
 }
 
 pub const TRANSPARENT: Color32 = Color32::TRANSPARENT;
+
+/// Makes a row that senses drags (like `Row`) the source of a drag carrying `payload`. egui's `dnd_drag_source` would
+/// lay a drag-only widget over the row, and egui's hit test drops every click under a drag-only widget, so the row's
+/// double-clicks, right-click menu and buttons would never fire. While dragged, `label` follows the pointer.
+pub fn drag_source<P: std::any::Any + Send + Sync>(ui: &Ui, response: &Response, payload: impl FnOnce() -> P, label: &str) {
+    if !response.dragged() {
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(CursorIcon::Grab);
+        }
+        return;
+    }
+    egui::DragAndDrop::set_payload(ui.ctx(), payload());
+    ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+    if let Some(at) = ui.ctx().pointer_interact_pos() {
+        egui::Area::new(response.id.with("dragged")).order(egui::Order::Tooltip).fixed_pos(at + vec2(14.0, 10.0)).interactable(false).show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(label));
+        });
+    }
+}

@@ -536,10 +536,9 @@ impl Shell {
                         canopy_core::files::Kind::File => Icon::File,
                     };
                     let size = format_size(file.size);
-                    let drag = ui.dnd_drag_source(ui.scope_id().with(("file", &file.name)), DraggedFiles(vec![shared.clone()]), |ui| {
-                        (Row { title: &file.name, detail: &size, mark: RowMark::Icon(mark), highlighted: false }).show(ui)
-                    });
-                    let row = drag.inner;
+                    // Dragged into an app it's handed over; double-click or right-click sends it too.
+                    let row = (Row { title: &file.name, detail: &size, mark: RowMark::Icon(mark), highlighted: false }).show(ui);
+                    canopy_ui::drag_source(ui, &row, || DraggedFiles(vec![shared.clone()]), &file.name);
                     if row.double_clicked() {
                         let target = open.focused.filter(|f| slots[*f].accepts(&shared)).or_else(|| slots.iter().position(|s| s.accepts(&shared)));
                         match target {
