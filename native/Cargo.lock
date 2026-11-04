@@ -721,7 +721,10 @@ dependencies = [
  "egui",
  "folio-native",
  "forma-native",
+ "image",
  "rfd",
+ "serde",
+ "serde_json",
  "streamcuts",
 ]
 

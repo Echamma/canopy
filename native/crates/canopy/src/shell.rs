@@ -35,6 +35,7 @@ fn catalog() -> Vec<Slot> {
         Slot { name: "Folio", description: "Make carousels", accent: Accent::Sky, initial: "Fl",
             kind: Kind::Native(&folio_native::DESCRIPTOR) },
         Slot { name: "StreamCuts", description: "Edit videos and cut clips", accent: Accent::Berry, initial: "SC", kind: Kind::Native(&streamcuts::DESCRIPTOR) },
+        Slot { name: "Moodboard", description: "Collect images and notes on an endless canvas", accent: Accent::Leaf, initial: "Mb", kind: Kind::Native(&crate::moodboard::DESCRIPTOR) },
     ]
 }
 
@@ -350,11 +351,11 @@ impl Shell {
         let rect = ui.max_rect();
         paint_ground(ui.painter(), rect, Mood::Ember);
 
-        // Ctrl+Tab cycles through the apps; Ctrl+1-3 jump to one.
+        // Ctrl+Tab cycles through the apps; Ctrl+1-4 jump to one.
         let (cycle, jump) = ctx.input_mut(|i| {
             let back = i.consume_key(Modifiers::CTRL | Modifiers::SHIFT, Key::Tab);
             let forward = !back && i.consume_key(Modifiers::CTRL, Key::Tab);
-            let jump = [Key::Num1, Key::Num2, Key::Num3].iter().position(|k| i.consume_key(Modifiers::CTRL, *k));
+            let jump = [Key::Num1, Key::Num2, Key::Num3, Key::Num4].iter().position(|k| i.consume_key(Modifiers::CTRL, *k));
             (if back { -1 } else if forward { 1 } else { 0 }, jump)
         });
         if cycle != 0 {
@@ -630,7 +631,7 @@ impl Shell {
                     show = Some(index);
                 }
             }
-            ui.painter().text(pos2(center.x, center.y + 110.0), Align2::CENTER_CENTER, "Ctrl+Tab moves between apps. Ctrl+1, Ctrl+2 and Ctrl+3 jump to one.", font::ui(13.0), color::INK_MUTED);
+            ui.painter().text(pos2(center.x, center.y + 110.0), Align2::CENTER_CENTER, "Ctrl+Tab moves between apps. Ctrl+1 through Ctrl+4 jump to one.", font::ui(13.0), color::INK_MUTED);
             if let Some(index) = show {
                 self.show_app(&ctx, index);
             }

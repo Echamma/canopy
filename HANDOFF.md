@@ -45,6 +45,8 @@ Spaces are shared with Electron Canopy: `%APPDATA%\Canopy\spaces.json` and the s
 
 ## Done
 
+- Codex, 2026-11-04: Added a native Rust Moodboard app inside Canopy (`dev`). Each space can hold multiple `.moodboard.json` boards in `Moodboard/`, with notes and copied PNG/JPEG/WebP images on an unbounded pan-and-zoom canvas. Cards can be moved and resized; notes can be edited; the app autosaves and appears in Projects, tabs, dock, and the launcher. `Ctrl+4` opens it. `cargo test -p canopy` covers board persistence and image copying. No installed exe was replaced.
+
 - Electron Canopy with Forma, Folio and StreamCuts (see README.md); Forma/Folio `canopy` branches pushed.
 - `native/crates/canopy-core`: spaces registry and folders, shared Files (list, unique names, copy, write, atomic writes), same JSON as Electron Canopy. `cargo test -p canopy-core`: 11 pass.
 - `native/crates/canopy-ui` (compiles): Canopy Night theme (`theme.rs`: colors, moods, accents, Nunito/Nunito Sans TTFs in `fonts/` converted from the bundled WOFF2), `paint.rs` (glowing dotted ground, leaf shapes, 26 line icons), `widgets.rs` (pill, icon button, primary/quiet buttons, two-line rows, sizes), `app.rs` (`CanopyApp`, `Host`, `AppDescriptor`, `Place`, `SharedFile`, `DraggedFiles`, `Document`, `Receipt`), `standalone.rs` (`run_standalone`: an app alone in its own window, with OS file drops, toasts, save on close).

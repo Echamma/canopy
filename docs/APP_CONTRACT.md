@@ -11,6 +11,7 @@ Canopy shows apps side by side in one window, inside a **space**. A space is a f
   Folio/              Folio's carousels for this space (*.folio.json)
   .canopy/forma/      Forma's projects, media library and recovery copy for this space
   .canopy/folio/      Folio's recovery copy for this space
+  Moodboard/           Moodboard's native boards (*.moodboard.json) and copied images in assets/
   .canopy/canopy/     which apps were open, so the space reopens the way you left it
 ```
 
@@ -79,3 +80,4 @@ What each app takes:
 | Forma | PNG, JPEG, WebP, SVG, MP4, WebM and Ogg video (as layers), `.forma` and Forma `.json` projects |
 | Folio | PNG, JPEG and WebP under 15 MB (as movable image layers), `.folio.json` projects |
 | StreamCuts | pictures, video and audio (added at the playhead of the open project) |
+| Moodboard | PNG, JPEG and WebP images (placed on its infinite canvas with the drop point) |
