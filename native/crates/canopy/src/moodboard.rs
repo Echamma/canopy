@@ -27,6 +27,17 @@ pub const DESCRIPTOR: AppDescriptor = AppDescriptor {
     create,
 };
 
+const IMAGE_HEADER: f32 = 28.0;
+
+// Project the pointer movement onto the image's diagonal so either axis can resize it.
+fn resized_image(w: f32, h: f32, screen_delta: Vec2, zoom: f32) -> (f32, f32) {
+    let ratio = (h - IMAGE_HEADER).max(1.0) / w.max(1.0);
+    let delta = screen_delta / zoom.max(0.1);
+    let width_delta = (delta.x + ratio * delta.y) / (1.0 + ratio * ratio);
+    let width = (w + width_delta).clamp(120.0, 1600.0);
+    (width, IMAGE_HEADER + width * ratio)
+}
+
 fn accepts(file: &SharedFile) -> bool {
     matches!(
         file.path
@@ -255,7 +266,7 @@ impl Moodboard {
                 continue;
             }
             let w = 280.0;
-            let h = (w * height as f32 / width.max(1) as f32).clamp(80.0, 440.0);
+            let h = IMAGE_HEADER + (w * height as f32 / width.max(1) as f32).clamp(80.0, 440.0);
             self.board.cards.push(Card {
                 id,
                 x: at.x + receipt.accepted as f32 * 28.0,
@@ -467,7 +478,8 @@ impl CanopyApp for Moodboard {
             if !rect.intersects(self.canvas) {
                 continue;
             }
-            let header = Rect::from_min_size(rect.min, vec2(rect.width(), 28.0 * self.zoom));
+            let header =
+                Rect::from_min_size(rect.min, vec2(rect.width(), IMAGE_HEADER * self.zoom));
             let selected = self.selected == Some(card.id);
             let fill = match card.kind {
                 CardKind::Note { .. } => Color32::from_rgb(60, 56, 38),
@@ -497,10 +509,18 @@ impl CanopyApp for Moodboard {
                         rect.max - vec2(10.0, 8.0) * self.zoom,
                     );
                     let galley = painter.layout(
-                        if text.is_empty() { "Write a note…".into() } else { text.clone() },
-                        font::ui(15.0 * self.zoom), color::INK, body.width(),
+                        if text.is_empty() {
+                            "Write a note…".into()
+                        } else {
+                            text.clone()
+                        },
+                        font::ui(15.0 * self.zoom),
+                        color::INK,
+                        body.width(),
                     );
-                    painter.with_clip_rect(body).galley(body.min, galley, color::INK);
+                    painter
+                        .with_clip_rect(body)
+                        .galley(body.min, galley, color::INK);
                 }
                 CardKind::Image { file, .. } => {
                     if let Some(texture) = self.texture(ui, file) {
@@ -551,6 +571,35 @@ impl CanopyApp for Moodboard {
                 pick = Some(card.id);
                 changed = true;
             }
+            if matches!(&card.kind, CardKind::Image { .. }) {
+                let grip =
+                    Rect::from_center_size(rect.right_bottom() - vec2(9.0, 9.0), vec2(18.0, 18.0));
+                painter.rect_filled(grip, 4.0, color::LEAF);
+                painter.line_segment(
+                    [
+                        grip.left_bottom() + vec2(5.0, -3.0),
+                        grip.right_top() + vec2(-3.0, 5.0),
+                    ],
+                    Stroke::new(1.5, color::CTA),
+                );
+                let resize = ui
+                    .interact(
+                        grip,
+                        ui.scope_id().with(("moodboard-resize", card.id)),
+                        Sense::click_and_drag(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
+                    .on_hover_text("Drag to resize photo");
+                if resize.clicked() || resize.dragged() {
+                    pick = Some(card.id);
+                }
+                if resize.dragged() {
+                    let (w, h) = resized_image(card.w, card.h, resize.drag_delta(), self.zoom);
+                    self.board.cards[index].w = w;
+                    self.board.cards[index].h = h;
+                    changed = true;
+                }
+            }
         }
         if let Some(id) = pick {
             self.selected = Some(id);
@@ -588,12 +637,24 @@ impl CanopyApp for Moodboard {
                     }
                     ui.add_space(8.0);
                     ui.label("Size");
-                    changed |= ui
-                        .add(egui::Slider::new(&mut card.w, 120.0..=800.0).text("Width"))
-                        .changed();
-                    changed |= ui
-                        .add(egui::Slider::new(&mut card.h, 90.0..=800.0).text("Height"))
-                        .changed();
+                    if matches!(&card.kind, CardKind::Image { .. }) {
+                        ui.label("Drag the green corner to resize the photo.");
+                        let ratio = (card.h - IMAGE_HEADER).max(1.0) / card.w.max(1.0);
+                        if ui
+                            .add(egui::Slider::new(&mut card.w, 120.0..=1600.0).text("Width"))
+                            .changed()
+                        {
+                            card.h = IMAGE_HEADER + card.w * ratio;
+                            changed = true;
+                        }
+                    } else {
+                        changed |= ui
+                            .add(egui::Slider::new(&mut card.w, 120.0..=800.0).text("Width"))
+                            .changed();
+                        changed |= ui
+                            .add(egui::Slider::new(&mut card.h, 90.0..=800.0).text("Height"))
+                            .changed();
+                    }
                     ui.add_space(12.0);
                     remove = ui.button("Delete item").clicked();
                 }
@@ -651,6 +712,17 @@ impl CanopyApp for Moodboard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mouse_resize_keeps_photo_proportions_at_any_zoom() {
+        let original = (280.0, IMAGE_HEADER + 140.0);
+        let normal = resized_image(original.0, original.1, vec2(50.0, 25.0), 1.0);
+        let zoomed = resized_image(original.0, original.1, vec2(100.0, 50.0), 2.0);
+        assert_eq!(normal, zoomed);
+        assert_eq!(normal, (330.0, IMAGE_HEADER + 165.0));
+        let small = resized_image(original.0, original.1, vec2(-1000.0, -500.0), 1.0);
+        assert_eq!(small.0, 120.0);
+        assert_eq!((small.1 - IMAGE_HEADER) / small.0, 0.5);
+    }
     #[test]
     fn board_roundtrip_preserves_world_positions_and_notes() {
         let board = Board {
