@@ -1,6 +1,6 @@
 # Canopy native rewrite: handoff
 
-Active agent: Codex (adding mouse resizing to Moodie and updating installed exes, 2026-11-04)
+Active agent: none
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
@@ -45,7 +45,7 @@ Spaces are shared with Electron Canopy: `%APPDATA%\Canopy\spaces.json` and the s
 
 ## Done
 
-- Codex, 2026-11-04: Moodie photos and videos have a visible green bottom-right handle for mouse resizing. Dragging preserves their displayed proportions at any canvas zoom; the width control in the inspector does too. Videos (MP4, MOV, WebM, MKV, M4V, AVI) import in the background, keep a copied source and poster in the space, and play/pause inline through StreamCuts' native FFmpeg frame stream. Inline playback is silent; "Open with sound" opens the clip in the system player. Added geometry coverage and a real FFmpeg import/decode test. The owner requested updated `D:\Software\Canopy.exe` and `Moodie.exe` after release verification.
+- Codex, 2026-11-04: Moodie photos and videos have a visible green bottom-right handle for mouse resizing. Dragging preserves their displayed proportions at any canvas zoom; the width control in the inspector does too. Videos (MP4, MOV, WebM, MKV, M4V, AVI) import in the background, keep a copied source and poster in the space, and play/pause inline through StreamCuts' native FFmpeg frame stream. Inline playback is silent; "Open with sound" opens the clip in the system player. Added geometry coverage and a real FFmpeg import/decode test. Updated `D:\Software\Canopy.exe` and `Moodie.exe`; both installed exes passed isolated startup checks. Backups: `Canopy-before-media-resize-2026-11-04.exe` and `Moodie-before-media-resize-2026-11-04.exe` in `D:\Software`.
 
 - Codex, 2026-11-04: Added the native Rust app Moodie inside Canopy (`dev`) and as its own `moodie.exe`. Each space can hold multiple `.moodboard.json` boards in `Moodboard/`, with notes and copied PNG/JPEG/WebP images on an unbounded pan-and-zoom canvas. Cards can be moved and resized; notes can be edited; the app autosaves and appears in Projects, tabs, dock, and the launcher. `Ctrl+4` opens it. `cargo test -p canopy` covers board persistence and image copying. At the owner's request, installed native `Canopy.exe` and `Moodie.exe` in `D:\Software`, with Folio references and StreamCuts' transcription script. Kept the Electron Canopy as `D:\Software\Canopy-before-Moodie-2026-11-04.exe`. Both installed executables passed isolated startup checks; the other standalone installed app exes were not replaced.
 
