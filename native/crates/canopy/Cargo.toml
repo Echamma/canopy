@@ -1,6 +1,6 @@
 [package]
 name = "canopy"
-description = "Canopy: one window for Forma, Folio and StreamCuts, with shared spaces and files"
+description = "Canopy: one window for Forma, Folio, StreamCuts and Moodie"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

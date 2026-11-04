@@ -1,7 +1,7 @@
 # Puts the native apps and what they need in one folder, ready for the owner to test before anything is installed:
 #   package-native.ps1 [-Out <folder>] [-Build]
 # -Build makes fresh release builds first (about 4 minutes each from scratch). The folder holds:
-#   Canopy.exe, StreamCuts.exe, Forma.exe, Folio.exe   each app also runs alone
+#   Canopy.exe, StreamCuts.exe, Forma.exe, Folio.exe, Moodie.exe   each app also runs alone
 #   backend\long-to-short\python\transcribe.py          StreamCuts' captions and Boss AI (found above the exe)
 #   assets\references\                                   Folio's Figma references (found above the exe)
 #   README.txt                                           what the apps need on the computer
@@ -37,6 +37,7 @@ $apps = [ordered]@{
   "StreamCuts.exe" = "$streamcuts\native\target\release\streamcuts.exe"
   "Forma.exe" = "$canopy\target\forma-standalone\release\forma-native.exe"
   "Folio.exe" = "$canopy\target\release\folio-native.exe"
+  "Moodie.exe" = "$canopy\target\release\moodie.exe"
 }
 foreach ($exe in $apps.Values) { if (-not (Test-Path $exe)) { throw "Missing $exe; run with -Build" } }
 New-Item -ItemType Directory -Force "$Out" | Out-Null
@@ -50,7 +51,7 @@ Copy-Item "$folio\assets\references\*" $references -Force
 @"
 Canopy native, packaged $(Get-Date -Format "yyyy-MM-dd HH:mm") from the Canopy branches (Canopy dev, the apps' canopy).
 
-Canopy.exe runs Forma, Folio and StreamCuts together in shared spaces (the same spaces as the Electron Canopy).
+Canopy.exe runs Forma, Folio, StreamCuts and Moodie together in shared spaces (the same spaces as the Electron Canopy).
 Each app also runs alone from its own exe. Keep the folders next to the exes.
 
 The computer also needs:

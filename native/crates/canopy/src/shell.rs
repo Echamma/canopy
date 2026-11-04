@@ -35,7 +35,7 @@ fn catalog() -> Vec<Slot> {
         Slot { name: "Folio", description: "Make carousels", accent: Accent::Sky, initial: "Fl",
             kind: Kind::Native(&folio_native::DESCRIPTOR) },
         Slot { name: "StreamCuts", description: "Edit videos and cut clips", accent: Accent::Berry, initial: "SC", kind: Kind::Native(&streamcuts::DESCRIPTOR) },
-        Slot { name: "Moodboard", description: "Collect images and notes on an endless canvas", accent: Accent::Leaf, initial: "Mb", kind: Kind::Native(&crate::moodboard::DESCRIPTOR) },
+        Slot { name: "Moodie", description: "Collect images and notes on an endless canvas", accent: Accent::Leaf, initial: "Mo", kind: Kind::Native(&canopy::moodboard::DESCRIPTOR) },
     ]
 }
 

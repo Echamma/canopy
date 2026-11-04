@@ -16,10 +16,10 @@ use std::{
 
 pub const DESCRIPTOR: AppDescriptor = AppDescriptor {
     id: "moodboard",
-    name: "Moodboard",
+    name: "Moodie",
     description: "Collect images and notes on an endless canvas",
     accent: Accent::Leaf,
-    initial: "Mb",
+    initial: "Mo",
     folder: "Moodboard",
     icon_png: include_bytes!("../../../../assets/canopy.png"),
     accepts: accepts,
@@ -152,7 +152,7 @@ impl Moodboard {
         let board = boards
             .first()
             .cloned()
-            .unwrap_or_else(|| Board::new("Untitled moodboard".into()));
+            .unwrap_or_else(|| Board::new("Untitled board".into()));
         Self {
             place,
             board,
@@ -342,7 +342,7 @@ impl CanopyApp for Moodboard {
                     if ui.button("New board").clicked() {
                         match self.save_board() {
                             Ok(()) => {
-                                self.board = Board::new("Untitled moodboard".into());
+                                self.board = Board::new("Untitled board".into());
                                 self.selected = None;
                                 self.pan = Vec2::ZERO;
                                 self.zoom = 1.0;
@@ -453,7 +453,7 @@ impl CanopyApp for Moodboard {
             painter.text(
                 self.canvas.center(),
                 Align2::CENTER_CENTER,
-                "Add images and notes to start your moodboard",
+                "Add images and notes to start your board",
                 font::display(18.0),
                 color::INK_MUTED,
             );
@@ -614,7 +614,7 @@ impl CanopyApp for Moodboard {
             }
         }
         if let Some(error) = self.error.take() {
-            host.toast(format!("Moodboard couldn't save: {error}"));
+            host.toast(format!("Moodie couldn't save: {error}"));
         }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(400));
@@ -637,7 +637,7 @@ impl CanopyApp for Moodboard {
     }
     fn open_document(&mut self, id: &str, host: &mut dyn Host) {
         if let Err(e) = self.switch(id) {
-            host.toast(format!("Couldn't open moodboard: {e}"));
+            host.toast(format!("Couldn't open Moodie board: {e}"));
         }
     }
     fn save(&mut self) -> Result<(), String> {
