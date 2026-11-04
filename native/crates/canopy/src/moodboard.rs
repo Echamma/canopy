@@ -7,12 +7,16 @@ use egui::{
     UiBuilder, Vec2, pos2, vec2,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::time::Instant;
 use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+use streamcuts::ffmpeg::{self, Frame, FrameStream};
+use streamcuts::project::{MediaKind, Picture};
 
 pub const DESCRIPTOR: AppDescriptor = AppDescriptor {
     id: "moodboard",
@@ -39,6 +43,9 @@ fn resized_image(w: f32, h: f32, screen_delta: Vec2, zoom: f32) -> (f32, f32) {
 }
 
 fn accepts(file: &SharedFile) -> bool {
+    is_image(file) || is_video(file)
+}
+fn is_image(file: &SharedFile) -> bool {
     matches!(
         file.path
             .extension()
@@ -48,6 +55,64 @@ fn accepts(file: &SharedFile) -> bool {
             .as_str(),
         "png" | "jpg" | "jpeg" | "webp"
     )
+}
+fn is_video(file: &SharedFile) -> bool {
+    matches!(
+        file.path
+            .extension()
+            .and_then(|x| x.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .as_str(),
+        "mp4" | "mov" | "webm" | "mkv" | "m4v" | "avi"
+    )
+}
+
+#[cfg(windows)]
+fn open_with_default_player(path: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn ShellExecuteW(
+            window: isize,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show: i32,
+        ) -> isize;
+    }
+    let verb: Vec<u16> = "open\0".encode_utf16().collect();
+    let file: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    // ShellExecuteW reads the zero-terminated strings during this call and retains no pointer.
+    let result = unsafe {
+        ShellExecuteW(
+            0,
+            verb.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            1,
+        )
+    };
+    if result <= 32 {
+        Err(format!("Windows couldn't open {}", path.display()))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn open_with_default_player(path: &Path) -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -64,8 +129,22 @@ struct Card {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum CardKind {
-    Note { text: String },
-    Image { file: String, name: String },
+    Note {
+        text: String,
+    },
+    Image {
+        file: String,
+        name: String,
+    },
+    Video {
+        file: String,
+        name: String,
+        #[serde(default)]
+        thumb: Option<String>,
+        duration: f64,
+        width: u32,
+        height: u32,
+    },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -152,9 +231,21 @@ struct Moodboard {
     zoom: f32,
     canvas: Rect,
     textures: HashMap<String, Option<TextureHandle>>,
+    pending: Vec<(u64, Receiver<Result<Card, String>>)>,
+    playing: Option<PlayingVideo>,
     dirty: bool,
     last_edit: f64,
     error: Option<String>,
+}
+
+struct PlayingVideo {
+    id: u64,
+    stream: Option<FrameStream>,
+    ahead: Option<Frame>,
+    texture: Option<TextureHandle>,
+    elapsed: f64,
+    started: Option<Instant>,
+    duration: f64,
 }
 
 impl Moodboard {
@@ -173,6 +264,8 @@ impl Moodboard {
             zoom: 1.0,
             canvas: Rect::NOTHING,
             textures: HashMap::new(),
+            pending: Vec::new(),
+            playing: None,
             dirty: false,
             last_edit: 0.0,
             error: None,
@@ -210,12 +303,13 @@ impl Moodboard {
         Ok(())
     }
     fn switch(&mut self, id: &str) -> Result<(), String> {
-        self.save_board()?;
+        self.save()?;
         self.board = read_board(&board_path(&self.place.projects_dir, id))?;
         self.selected = None;
         self.pan = Vec2::ZERO;
         self.zoom = 1.0;
         self.textures.clear();
+        self.playing = None;
         Ok(())
     }
     fn add_note(&mut self, at: Pos2, ui: &Ui) {
@@ -234,7 +328,14 @@ impl Moodboard {
         self.mark(ui);
     }
     fn next_id(&self) -> u64 {
-        self.board.cards.iter().map(|c| c.id).max().unwrap_or(0) + 1
+        self.board
+            .cards
+            .iter()
+            .map(|c| c.id)
+            .chain(self.pending.iter().map(|(id, _)| *id))
+            .max()
+            .unwrap_or(0)
+            + 1
     }
     fn add_images(&mut self, files: Vec<SharedFile>, at: Pos2) -> Receipt {
         let mut receipt = Receipt::default();
@@ -244,7 +345,7 @@ impl Moodboard {
             return receipt;
         }
         for file in files {
-            if !accepts(&file) {
+            if !is_image(&file) {
                 receipt.skipped.push(file.name);
                 continue;
             }
@@ -286,6 +387,248 @@ impl Moodboard {
         }
         receipt
     }
+    fn add_videos(&mut self, files: Vec<SharedFile>, at: Pos2) -> Receipt {
+        let mut receipt = Receipt::default();
+        let asset_dir = self.place.projects_dir.join("assets").join(&self.board.id);
+        if let Err(e) = fs::create_dir_all(&asset_dir) {
+            receipt.note = Some(e.to_string());
+            return receipt;
+        }
+        for file in files {
+            if !is_video(&file) || !file.path.is_file() {
+                receipt.skipped.push(file.name);
+                continue;
+            }
+            let id = self.next_id();
+            let ext = file
+                .path
+                .extension()
+                .and_then(|x| x.to_str())
+                .unwrap_or("mp4")
+                .to_ascii_lowercase();
+            let relative = format!("assets/{}/{}.{}", self.board.id, id, ext);
+            let thumb_relative = format!("assets/{}/{}-poster.png", self.board.id, id);
+            let target = self.place.projects_dir.join(&relative);
+            let thumb_target = self.place.projects_dir.join(&thumb_relative);
+            let source = file.path;
+            let name = file.name;
+            let place = pos2(
+                at.x + receipt.accepted as f32 * 28.0,
+                at.y + receipt.accepted as f32 * 28.0,
+            );
+            let (sender, receiver) = mpsc::channel();
+            std::thread::spawn(move || {
+                let result = (|| -> Result<Card, String> {
+                    let media = ffmpeg::probe(&source)?;
+                    if media.kind != MediaKind::Video || media.width == 0 || media.height == 0 {
+                        return Err(format!("{name} has no readable video picture"));
+                    }
+                    fs::copy(&source, &target).map_err(|e| format!("Couldn't copy {name}: {e}"))?;
+                    let decode_w = media.width.min(640).max(2);
+                    let decode_h = ((media.height as f64 * decode_w as f64 / media.width as f64)
+                        .round() as u32)
+                        .clamp(2, 720);
+                    let thumb = ffmpeg::still(&target, 0.0, decode_w, decode_h, Picture::default())
+                        .ok()
+                        .and_then(|frame| {
+                            image::RgbaImage::from_raw(
+                                frame.size[0] as u32,
+                                frame.size[1] as u32,
+                                frame.rgba,
+                            )
+                        })
+                        .and_then(|image| image.save(&thumb_target).ok().map(|_| thumb_relative));
+                    let w = 300.0;
+                    let h = IMAGE_HEADER
+                        + (w * media.height as f32 / media.width as f32).clamp(100.0, 450.0);
+                    Ok(Card {
+                        id,
+                        x: place.x,
+                        y: place.y,
+                        w,
+                        h,
+                        kind: CardKind::Video {
+                            file: relative,
+                            name,
+                            thumb,
+                            duration: media.duration,
+                            width: media.width,
+                            height: media.height,
+                        },
+                    })
+                })();
+                let _ = sender.send(result);
+            });
+            self.pending.push((id, receiver));
+            receipt.accepted += 1;
+        }
+        if receipt.accepted > 0 {
+            receipt.note = Some(format!("Importing {} video(s)…", receipt.accepted));
+        }
+        receipt
+    }
+    fn finish_imports(&mut self) -> Result<(), String> {
+        let mut first_error = None;
+        for (_, receiver) in std::mem::take(&mut self.pending) {
+            match receiver.recv() {
+                Ok(Ok(card)) => {
+                    self.board.cards.push(card);
+                    self.dirty = true;
+                    self.last_edit = 0.0;
+                }
+                Ok(Err(error)) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+                Err(error) => {
+                    if first_error.is_none() {
+                        first_error = Some(error.to_string());
+                    }
+                }
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+    fn poll_imports(&mut self, ui: &Ui, host: &mut dyn Host) {
+        let mut waiting = Vec::new();
+        for (id, receiver) in std::mem::take(&mut self.pending) {
+            match receiver.try_recv() {
+                Ok(Ok(card)) => {
+                    host.toast(format!(
+                        "Added {} to Moodie",
+                        match &card.kind {
+                            CardKind::Video { name, .. } => name.as_str(),
+                            _ => "video",
+                        }
+                    ));
+                    self.board.cards.push(card);
+                    self.mark(ui);
+                }
+                Ok(Err(error)) => host.toast(error),
+                Err(TryRecvError::Empty) => waiting.push((id, receiver)),
+                Err(TryRecvError::Disconnected) => {
+                    host.toast("Video import stopped unexpectedly".into())
+                }
+            }
+        }
+        self.pending = waiting;
+        if !self.pending.is_empty() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(200));
+        }
+    }
+    fn toggle_video(&mut self, id: u64) {
+        let Some(card) = self.board.cards.iter().find(|c| c.id == id) else {
+            return;
+        };
+        let CardKind::Video {
+            file,
+            duration,
+            width,
+            height,
+            ..
+        } = &card.kind
+        else {
+            return;
+        };
+        let path = self.place.projects_dir.join(file);
+        let decode_w = width.min(&640).max(&2).div_ceil(2) * 2;
+        let decode_h = ((*height as f64 * decode_w as f64 / (*width).max(1) as f64).round() as u32)
+            .clamp(2, 720)
+            .div_ceil(2)
+            * 2;
+        if let Some(playing) = &mut self.playing {
+            if playing.id == id {
+                if let Some(started) = playing.started.take() {
+                    playing.elapsed += started.elapsed().as_secs_f64();
+                    playing.stream = None;
+                    playing.ahead = None;
+                } else {
+                    playing.stream = Some(FrameStream::start(
+                        &path,
+                        playing.elapsed,
+                        24,
+                        decode_w,
+                        decode_h,
+                        Picture::default(),
+                        1.0,
+                    ));
+                    playing.started = Some(Instant::now());
+                }
+                return;
+            }
+        }
+        self.playing = Some(PlayingVideo {
+            id,
+            stream: Some(FrameStream::start(
+                &path,
+                0.0,
+                24,
+                decode_w,
+                decode_h,
+                Picture::default(),
+                1.0,
+            )),
+            ahead: None,
+            texture: None,
+            elapsed: 0.0,
+            started: Some(Instant::now()),
+            duration: *duration,
+        });
+    }
+    fn advance_video(&mut self, ui: &Ui) {
+        let Some(playing) = &mut self.playing else {
+            return;
+        };
+        let Some(started) = playing.started else {
+            return;
+        };
+        let position = playing.elapsed + started.elapsed().as_secs_f64();
+        let mut latest = None;
+        let mut ended = false;
+        loop {
+            let frame = if let Some(ahead) = playing.ahead.take() {
+                Ok(ahead)
+            } else {
+                playing.stream.as_ref().unwrap().frames.try_recv()
+            };
+            match frame {
+                Ok(frame) if frame.time <= position + 0.025 => latest = Some(frame),
+                Ok(frame) => {
+                    playing.ahead = Some(frame);
+                    break;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    ended = true;
+                    break;
+                }
+            }
+        }
+        if let Some(frame) = latest {
+            let image = egui::ColorImage::from_rgba_unmultiplied(frame.size, &frame.rgba);
+            match &mut playing.texture {
+                Some(texture) => texture.set(image, TextureOptions::LINEAR),
+                None => {
+                    playing.texture = Some(ui.ctx().load_texture(
+                        format!("moodie-video-{}", playing.id),
+                        image,
+                        TextureOptions::LINEAR,
+                    ))
+                }
+            }
+        }
+        if ended || (playing.duration > 0.0 && position >= playing.duration) {
+            playing.stream = None;
+            playing.started = None;
+            playing.elapsed = 0.0;
+            playing.ahead = None;
+        } else {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(33));
+        }
+    }
     fn texture(&mut self, ui: &Ui, file: &str) -> Option<&TextureHandle> {
         self.textures
             .entry(file.to_owned())
@@ -308,6 +651,8 @@ impl Moodboard {
 
 impl CanopyApp for Moodboard {
     fn ui(&mut self, ui: &mut Ui, host: &mut dyn Host) {
+        self.poll_imports(ui, host);
+        self.advance_video(ui);
         let whole = ui.max_rect();
         let toolbar = Rect::from_min_size(whole.min, vec2(whole.width(), 76.0));
         let inspector_width = if self.selected.is_some() { 252.0 } else { 0.0 };
@@ -351,7 +696,7 @@ impl CanopyApp for Moodboard {
                         self.mark(ui);
                     }
                     if ui.button("New board").clicked() {
-                        match self.save_board() {
+                        match self.save() {
                             Ok(()) => {
                                 self.board = Board::new("Untitled board".into());
                                 self.selected = None;
@@ -377,6 +722,20 @@ impl CanopyApp for Moodboard {
                             let receipt = self.add_images(files, pos2(-140.0, -100.0));
                             if receipt.accepted > 0 {
                                 host.toast(format!("Added {} image(s)", receipt.accepted));
+                            }
+                        }
+                    }
+                    if ui.button("+ Videos").clicked() {
+                        if let Some(paths) = rfd::FileDialog::new()
+                            .add_filter("Videos", &["mp4", "mov", "webm", "mkv", "m4v", "avi"])
+                            .pick_files()
+                        {
+                            let receipt = self.add_videos(
+                                paths.into_iter().map(SharedFile::new).collect(),
+                                pos2(-150.0, -100.0),
+                            );
+                            if let Some(note) = receipt.note {
+                                host.toast(note);
                             }
                         }
                     }
@@ -464,13 +823,14 @@ impl CanopyApp for Moodboard {
             painter.text(
                 self.canvas.center(),
                 Align2::CENTER_CENTER,
-                "Add images and notes to start your board",
+                "Add images, videos and notes to start your board",
                 font::display(18.0),
                 color::INK_MUTED,
             );
         }
         let mut changed = false;
         let mut pick = None;
+        let mut play = None;
         for index in 0..self.board.cards.len() {
             let card = self.board.cards[index].clone();
             let top_left = self.screen(card.x, card.y);
@@ -484,6 +844,7 @@ impl CanopyApp for Moodboard {
             let fill = match card.kind {
                 CardKind::Note { .. } => Color32::from_rgb(60, 56, 38),
                 CardKind::Image { .. } => Color32::from_rgb(35, 38, 34),
+                CardKind::Video { .. } => Color32::from_rgb(27, 36, 35),
             };
             painter.rect_filled(rect, 7.0, fill);
             painter.rect_stroke(
@@ -536,10 +897,51 @@ impl CanopyApp for Moodboard {
                         );
                     }
                 }
+                CardKind::Video { thumb, .. } => {
+                    let texture = self
+                        .playing
+                        .as_ref()
+                        .filter(|p| p.id == card.id)
+                        .and_then(|p| p.texture.clone())
+                        .or_else(|| {
+                            thumb
+                                .as_ref()
+                                .and_then(|path| self.texture(ui, path).cloned())
+                        });
+                    if let Some(texture) = texture {
+                        let image_rect = Rect::from_min_max(
+                            pos2(rect.left() + 5.0, header.bottom() + 4.0),
+                            rect.max - vec2(5.0, 5.0),
+                        );
+                        painter.image(
+                            texture.id(),
+                            image_rect,
+                            Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)),
+                            Color32::WHITE,
+                        );
+                    }
+                    let control = Rect::from_center_size(
+                        pos2(rect.center().x, (header.bottom() + rect.bottom()) * 0.5),
+                        vec2(42.0, 42.0),
+                    );
+                    painter.circle_filled(control.center(), 21.0, Color32::from_black_alpha(190));
+                    let playing = self
+                        .playing
+                        .as_ref()
+                        .is_some_and(|p| p.id == card.id && p.started.is_some());
+                    painter.text(
+                        control.center(),
+                        Align2::CENTER_CENTER,
+                        if playing { "Ⅱ" } else { "▶" },
+                        font::display(20.0),
+                        color::INK,
+                    );
+                }
             }
             let label = match &card.kind {
                 CardKind::Note { .. } => "Note",
                 CardKind::Image { name, .. } => name.as_str(),
+                CardKind::Video { name, .. } => name.as_str(),
             };
             painter.with_clip_rect(header.shrink(5.0)).text(
                 header.left_center() + vec2(8.0, 0.0),
@@ -571,7 +973,7 @@ impl CanopyApp for Moodboard {
                 pick = Some(card.id);
                 changed = true;
             }
-            if matches!(&card.kind, CardKind::Image { .. }) {
+            if matches!(&card.kind, CardKind::Image { .. } | CardKind::Video { .. }) {
                 let grip =
                     Rect::from_center_size(rect.right_bottom() - vec2(9.0, 9.0), vec2(18.0, 18.0));
                 painter.rect_filled(grip, 4.0, color::LEAF);
@@ -589,7 +991,7 @@ impl CanopyApp for Moodboard {
                         Sense::click_and_drag(),
                     )
                     .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
-                    .on_hover_text("Drag to resize photo");
+                    .on_hover_text("Drag to resize media");
                 if resize.clicked() || resize.dragged() {
                     pick = Some(card.id);
                 }
@@ -600,9 +1002,30 @@ impl CanopyApp for Moodboard {
                     changed = true;
                 }
             }
+            if matches!(&card.kind, CardKind::Video { .. }) {
+                let control = Rect::from_center_size(
+                    pos2(rect.center().x, (header.bottom() + rect.bottom()) * 0.5),
+                    vec2(42.0, 42.0),
+                );
+                if ui
+                    .interact(
+                        control,
+                        ui.scope_id().with(("moodie-play", card.id)),
+                        Sense::click(),
+                    )
+                    .on_hover_text("Play or pause video")
+                    .clicked()
+                {
+                    play = Some(card.id);
+                    pick = Some(card.id);
+                }
+            }
         }
         if let Some(id) = pick {
             self.selected = Some(id);
+        }
+        if let Some(id) = play {
+            self.toggle_video(id);
         }
         if changed {
             self.mark(ui);
@@ -623,6 +1046,7 @@ impl CanopyApp for Moodboard {
                     ui.heading(match card.kind {
                         CardKind::Note { .. } => "Note",
                         CardKind::Image { .. } => "Image",
+                        CardKind::Video { .. } => "Video",
                     });
                     ui.add_space(8.0);
                     if let CardKind::Note { text } = &mut card.kind {
@@ -635,10 +1059,25 @@ impl CanopyApp for Moodboard {
                             )
                             .changed();
                     }
+                    if let CardKind::Video { file, duration, .. } = &card.kind {
+                        ui.label(format!(
+                            "Length: {}:{:02}",
+                            *duration as u64 / 60,
+                            *duration as u64 % 60
+                        ));
+                        ui.label("Play on the canvas, or open with sound.");
+                        if ui.button("Open with sound").clicked() {
+                            if let Err(error) =
+                                open_with_default_player(&self.place.projects_dir.join(file))
+                            {
+                                host.toast(error);
+                            }
+                        }
+                    }
                     ui.add_space(8.0);
                     ui.label("Size");
-                    if matches!(&card.kind, CardKind::Image { .. }) {
-                        ui.label("Drag the green corner to resize the photo.");
+                    if matches!(&card.kind, CardKind::Image { .. } | CardKind::Video { .. }) {
+                        ui.label("Drag the green corner to resize.");
                         let ratio = (card.h - IMAGE_HEADER).max(1.0) / card.w.max(1.0);
                         if ui
                             .add(egui::Slider::new(&mut card.w, 120.0..=1600.0).text("Width"))
@@ -659,6 +1098,13 @@ impl CanopyApp for Moodboard {
                     remove = ui.button("Delete item").clicked();
                 }
                 if remove {
+                    if self
+                        .playing
+                        .as_ref()
+                        .is_some_and(|p| Some(p.id) == self.selected)
+                    {
+                        self.playing = None;
+                    }
                     self.board.cards.retain(|c| Some(c.id) != self.selected);
                     self.selected = None;
                     changed = true;
@@ -694,7 +1140,25 @@ impl CanopyApp for Moodboard {
         } else {
             Pos2::ZERO
         };
-        self.add_images(files, at)
+        let mut images = Vec::new();
+        let mut videos = Vec::new();
+        let mut skipped = Vec::new();
+        for file in files {
+            if is_image(&file) {
+                images.push(file);
+            } else if is_video(&file) {
+                videos.push(file);
+            } else {
+                skipped.push(file.name);
+            }
+        }
+        let mut receipt = self.add_images(images, at);
+        let video = self.add_videos(videos, at);
+        receipt.accepted += video.accepted;
+        receipt.skipped.extend(video.skipped);
+        receipt.skipped.extend(skipped);
+        receipt.note = video.note.or(receipt.note);
+        receipt
     }
     fn open_document(&mut self, id: &str, host: &mut dyn Host) {
         if let Err(e) = self.switch(id) {
@@ -702,7 +1166,9 @@ impl CanopyApp for Moodboard {
         }
     }
     fn save(&mut self) -> Result<(), String> {
-        self.save_board()
+        let imported = self.finish_imports();
+        let saved = self.save_board();
+        imported.and(saved)
     }
     fn title(&self) -> String {
         self.board.name.clone()
@@ -804,6 +1270,91 @@ mod tests {
         assert!(app.place.projects_dir.join(file).is_file());
         assert_eq!(app.board.cards[0].y, 250.0);
         app.save_board().unwrap();
+        assert_eq!(
+            read_board(&board_path(&app.place.projects_dir, &app.board.id))
+                .unwrap()
+                .cards
+                .len(),
+            1
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn importing_a_video_makes_a_playable_card_in_the_space() {
+        let dir = std::env::temp_dir().join(format!(
+            "canopy-moodie-video-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("sample.mp4");
+        let status = ffmpeg::command(&ffmpeg::ffmpeg())
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:s=96x54:r=5:d=0.4",
+                "-an",
+                "-c:v",
+                "mpeg4",
+            ])
+            .arg(&source)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let place = Place {
+            space: None,
+            projects_dir: dir.join("boards"),
+            data_dir: dir.join("data"),
+            exports_dir: dir.join("exports"),
+        };
+        let mut app = Moodboard::new(place);
+        assert!(accepts(&SharedFile::new(&source)));
+        let receipt = app.add_videos(vec![SharedFile::new(&source)], pos2(50.0, -30.0));
+        assert_eq!(receipt.accepted, 1);
+        app.save().unwrap();
+        let card = &app.board.cards[0];
+        assert_eq!((card.x, card.y), (50.0, -30.0));
+        let CardKind::Video {
+            file,
+            thumb,
+            duration,
+            ..
+        } = &card.kind
+        else {
+            panic!("expected video card")
+        };
+        assert!(app.place.projects_dir.join(file).is_file());
+        assert!(
+            app.place
+                .projects_dir
+                .join(thumb.as_ref().expect("poster"))
+                .is_file()
+        );
+        assert!(*duration > 0.0);
+        let stream = FrameStream::start(
+            &app.place.projects_dir.join(file),
+            0.0,
+            5,
+            96,
+            54,
+            Picture::default(),
+            1.0,
+        );
+        assert_eq!(
+            stream
+                .frames
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+                .size,
+            [96, 54]
+        );
         assert_eq!(
             read_board(&board_path(&app.place.projects_dir, &app.board.id))
                 .unwrap()
