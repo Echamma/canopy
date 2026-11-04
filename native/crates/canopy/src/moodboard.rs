@@ -553,6 +553,7 @@ impl Moodboard {
                         decode_h,
                         Picture::default(),
                         1.0,
+                        None,
                     ));
                     playing.started = Some(Instant::now());
                 }
@@ -569,6 +570,7 @@ impl Moodboard {
                 decode_h,
                 Picture::default(),
                 1.0,
+                None,
             )),
             ahead: None,
             texture: None,
@@ -1346,6 +1348,7 @@ mod tests {
             54,
             Picture::default(),
             1.0,
+            None,
         );
         assert_eq!(
             stream
