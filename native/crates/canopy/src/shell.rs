@@ -37,6 +37,7 @@ fn catalog() -> Vec<Slot> {
         Slot { name: "StreamCuts", description: "Edit videos and cut clips", accent: Accent::Berry, initial: "SC", kind: Kind::Native(&streamcuts::DESCRIPTOR) },
         Slot { name: "Moodie", description: "Collect images and notes on an endless canvas", accent: Accent::Leaf, initial: "Mo", kind: Kind::Native(&canopy::moodboard::DESCRIPTOR) },
         Slot { name: "Video Chat", description: "Find Shorts in long videos with an AI producer", accent: Accent::Moss, initial: "VC", kind: Kind::Native(&canopy::videochat::DESCRIPTOR) },
+        Slot { name: "File Manager", description: "Your files with titles and descriptions; drag them out to post", accent: Accent::Sky, initial: "FM", kind: Kind::Native(&canopy::filemanager::DESCRIPTOR) },
     ]
 }
 
@@ -368,7 +369,7 @@ impl Shell {
         let (cycle, jump) = ctx.input_mut(|i| {
             let back = i.consume_key(Modifiers::CTRL | Modifiers::SHIFT, Key::Tab);
             let forward = !back && i.consume_key(Modifiers::CTRL, Key::Tab);
-            let jump = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5].iter().position(|k| i.consume_key(Modifiers::CTRL, *k));
+            let jump = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6].iter().position(|k| i.consume_key(Modifiers::CTRL, *k));
             (if back { -1 } else if forward { 1 } else { 0 }, jump)
         });
         if cycle != 0 {
@@ -653,7 +654,7 @@ impl Shell {
                     show = Some(index);
                 }
             }
-            ui.painter().text(pos2(center.x, center.y + 110.0), Align2::CENTER_CENTER, "Ctrl+Tab moves between apps. Ctrl+1 through Ctrl+5 jump to one.", font::ui(13.0), color::INK_MUTED);
+            ui.painter().text(pos2(center.x, center.y + 110.0), Align2::CENTER_CENTER, "Ctrl+Tab moves between apps. Ctrl+1 through Ctrl+6 jump to one.", font::ui(13.0), color::INK_MUTED);
             if let Some(index) = show {
                 self.show_app(&ctx, index);
             }

@@ -12,6 +12,8 @@ dirs = "7.0.0"
 eframe = "0.37.0"
 egui = "0.37.0"
 rfd = "0.17.2"
+drag = "2.1.1"
+raw-window-handle = "0.6"
 streamcuts = { path = "../../../../streamcuts/native" }
 forma-native = { path = "../../../../forma-studio/native" }
 folio-native = { path = "../../../../folio-carousel-studio/native" }
