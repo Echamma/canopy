@@ -58,9 +58,13 @@ pub fn remember_folder(dir: &Path) -> Result<(), String> {
     std::fs::write(file, serde_json::json!({ "folder": dir }).to_string()).map_err(|e| e.to_string())
 }
 
-/// Where the engine keeps its projects (`<folder>\backend\data\jobs`).
+/// Where the engine keeps its projects (`<folder>\backend\data\jobs`, or `VIDEO_CHAT_DATA\jobs` for an engine run
+/// from another folder, as tests do).
 pub fn jobs_dir(folder: &Path) -> PathBuf {
-    folder.join("backend").join("data").join("jobs")
+    match std::env::var_os("VIDEO_CHAT_DATA") {
+        Some(data) => PathBuf::from(data).join("jobs"),
+        None => folder.join("backend").join("data").join("jobs"),
+    }
 }
 
 /// A project's source video on disk.

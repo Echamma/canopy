@@ -187,13 +187,13 @@ fn library(app: &mut VideoChat, ui: &mut Ui) {
         });
         ui.label(muted("Or drop a video on Video Chat.").font(font::ui(12.0)));
         ui.add_space(6.0);
-        downloads(app, ui);
-        ui.add_space(8.0);
-        projects(app, ui);
         if app.open.is_some() {
-            ui.add_space(8.0);
             analysis(app, ui);
+            ui.add_space(8.0);
         }
+        projects(app, ui);
+        ui.add_space(8.0);
+        downloads(app, ui);
     });
 }
 
@@ -716,7 +716,8 @@ fn transport_bar(app: &mut VideoChat, ui: &mut Ui, rect: Rect, host: &mut dyn Ho
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if open.settings.short_layout.mode == "stacked" || open.layout_edit.is_some() {
                     let editing = open.layout_edit.is_some();
-                    if quiet_button(ui, if editing { "Done with the layout" } else { "Edit the Short layout" }, Some(Icon::Grid)).on_hover_text("Draw the regions stacked above and below the gameplay in Shorts").clicked() {
+                    let tip = if editing { "Done with the Short layout" } else { "Edit the Short layout: draw the regions stacked above and below the gameplay" };
+                    if icon_button(ui, Icon::Grid, tip, editing).clicked() {
                         open.layout_edit = if editing { None } else { Some(LayoutEdit::default()) };
                         if let Some(player) = &mut open.player {
                             player.pause();
@@ -1115,7 +1116,8 @@ fn clips(app: &mut VideoChat, ui: &mut Ui, host: &mut dyn Host) {
         ui.spacing_mut().item_spacing.y = 4.0;
         let shorts = if settings.include_shorts { plan.shorts.len() } else { 0 };
         let chapters = if settings.include_longer_videos { plan.longer_segments.len() } else { 0 };
-        ui.label(muted(format!("{shorts} Shorts · {chapters} chapters")).font(font::ui(12.0)));
+        let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        ui.label(muted(format!("{} · {}", plural(shorts, "Short", "Shorts"), plural(chapters, "chapter", "chapters"))).font(font::ui(12.0)));
         if settings.include_shorts && (plan.shorts.len() as u32) < settings.min_shorts {
             ui.add(egui::Label::new(RichText::new(format!(
                 "Only {} Shorts scored {}+, under your minimum of {}.{}",
@@ -1160,10 +1162,14 @@ fn clips(app: &mut VideoChat, ui: &mut Ui, host: &mut dyn Host) {
         ui.add_space(6.0);
         let missing: Vec<usize> = plan.shorts.iter().enumerate().filter(|(_, s)| s.lines().is_empty()).map(|(i, _)| i).collect();
         let busy = app.busy.is_some();
-        ui.horizontal_wrapped(|ui| {
+        ui.vertical(|ui| {
             if settings.include_shorts && !plan.shorts.is_empty() {
                 ui.add_enabled_ui(!busy && !missing.is_empty(), |ui| {
-                    let label = if missing.is_empty() { "All Shorts have captions".to_owned() } else { format!("Make captions for {} Shorts", missing.len()) };
+                    let label = match missing.len() {
+                        0 => "All Shorts have captions".to_owned(),
+                        1 => "Make captions for 1 Short".to_owned(),
+                        n => format!("Make captions for {n} Shorts"),
+                    };
                     if quiet_button(ui, &label, Some(Icon::Captions)).clicked() {
                         action = Some((ClipKind::Short, usize::MAX, "captions-all"));
                     }
