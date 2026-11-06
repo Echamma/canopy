@@ -398,26 +398,65 @@ fn open_with_default(path: &Path) {
 /// Puts text on the clipboard now (the drag that follows runs before egui would).
 fn set_clipboard(ctx: &egui::Context, text: &str) {
     #[cfg(windows)]
-    {
-        use std::io::Write;
-        // Through clip.exe's stdin as UTF-16 with a byte order mark, so any characters (emoji, accents) survive.
-        let mut bytes = vec![0xFF, 0xFE];
-        bytes.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
-        let mut command = std::process::Command::new("clip");
-        command.stdin(std::process::Stdio::piped());
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000);
-        }
-        if let Ok(mut child) = command.spawn() {
-            if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(&bytes);
-            }
-            let _ = child.wait();
-            return;
-        }
+    if windows_clipboard(text) {
+        return;
     }
     ctx.copy_text(text.to_owned());
+}
+
+/// Puts `text` on the Windows clipboard as Unicode text, so emoji and accents survive. False if it couldn't.
+#[cfg(windows)]
+fn windows_clipboard(text: &str) -> bool {
+    const CF_UNICODETEXT: u32 = 13;
+    const GMEM_MOVEABLE: u32 = 0x0002;
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn OpenClipboard(owner: isize) -> i32;
+        fn EmptyClipboard() -> i32;
+        fn SetClipboardData(format: u32, memory: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+        fn CloseClipboard() -> i32;
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GlobalAlloc(flags: u32, bytes: usize) -> *mut std::ffi::c_void;
+        fn GlobalLock(memory: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+        fn GlobalUnlock(memory: *mut std::ffi::c_void) -> i32;
+        fn GlobalFree(memory: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    }
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY: the standard clipboard sequence. The memory is ours until SetClipboardData takes it; if that fails we
+    // free it. Copying `wide` stays within the size allocated.
+    unsafe {
+        if OpenClipboard(0) == 0 {
+            return false;
+        }
+        EmptyClipboard();
+        let memory = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2);
+        let mut ok = false;
+        if !memory.is_null() {
+            let target = GlobalLock(memory) as *mut u16;
+            if !target.is_null() {
+                std::ptr::copy_nonoverlapping(wide.as_ptr(), target, wide.len());
+                GlobalUnlock(memory);
+                ok = !SetClipboardData(CF_UNICODETEXT, memory).is_null();
+            }
+            if !ok {
+                GlobalFree(memory);
+            }
+        }
+        CloseClipboard();
+        ok
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    /// Writes to the real clipboard: run alone with `--ignored`, and save the clipboard first.
+    #[test]
+    #[ignore]
+    fn puts_unicode_text_on_the_clipboard() {
+        assert!(super::windows_clipboard("Wait for it 🎮 #fyp"));
+    }
 }
 
 fn size_text(entry: &Entry) -> String {
@@ -611,7 +650,7 @@ impl FileManager {
                 Location::Folder(dir) => dir.parent().map(Path::to_path_buf),
                 _ => None,
             };
-            if ui.add_enabled_ui(parent.is_some(), |ui| icon_button(ui, Icon::Chevron, "Up a folder", false)).inner.clicked() {
+            if ui.add_enabled(parent.is_some(), egui::Button::new("Up").small()).on_hover_text("Up a folder").clicked() {
                 go = parent.map(Location::Folder);
             }
             let title = match &self.location {
@@ -628,7 +667,7 @@ impl FileManager {
                         open_with_default(&dir);
                     }
                     let pinned = self.prefs.pinned.contains(&dir);
-                    if icon_button(ui, Icon::Lock, if pinned { "Unpin this folder" } else { "Pin this folder to the left" }, pinned).clicked() {
+                    if ui.small_button(if pinned { "Unpin" } else { "Pin" }).on_hover_text(if pinned { "Take this folder off the left" } else { "Keep this folder on the left, under Pinned" }).clicked() {
                         if pinned {
                             self.prefs.pinned.retain(|p| p != &dir);
                         } else {
