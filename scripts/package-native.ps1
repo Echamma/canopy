@@ -1,7 +1,7 @@
 # Puts the native apps and what they need in one folder, ready for the owner to test before anything is installed:
 #   package-native.ps1 [-Out <folder>] [-Build]
 # -Build makes fresh release builds first (about 4 minutes each from scratch). The folder holds:
-#   Canopy.exe, StreamCuts.exe, Forma.exe, Folio.exe, Moodie.exe   each app also runs alone
+#   Canopy.exe, StreamCuts.exe, Forma.exe, Folio.exe, Moodie.exe, Video Chat.exe   each app also runs alone
 #   backend\long-to-short\python\transcribe.py          StreamCuts' captions and Boss AI (found above the exe)
 #   assets\references\                                   Folio's Figma references (found above the exe)
 #   README.txt                                           what the apps need on the computer
@@ -38,6 +38,7 @@ $apps = [ordered]@{
   "Forma.exe" = "$canopy\target\forma-standalone\release\forma-native.exe"
   "Folio.exe" = "$canopy\target\release\folio-native.exe"
   "Moodie.exe" = "$canopy\target\release\moodie.exe"
+  "Video Chat.exe" = "$canopy\target\release\videochat.exe"
 }
 foreach ($exe in $apps.Values) { if (-not (Test-Path $exe)) { throw "Missing $exe; run with -Build" } }
 New-Item -ItemType Directory -Force "$Out" | Out-Null
@@ -51,7 +52,7 @@ Copy-Item "$folio\assets\references\*" $references -Force
 @"
 Canopy native, packaged $(Get-Date -Format "yyyy-MM-dd HH:mm") from the Canopy branches (Canopy dev, the apps' canopy).
 
-Canopy.exe runs Forma, Folio, StreamCuts and Moodie together in shared spaces (the same spaces as the Electron Canopy).
+Canopy.exe runs Forma, Folio, StreamCuts, Moodie and Video Chat together in shared spaces (the same spaces as the Electron Canopy).
 Each app also runs alone from its own exe. Keep the folders next to the exes.
 
 The computer also needs:
@@ -59,6 +60,8 @@ The computer also needs:
   A shared FFmpeg build starts much faster than the static one.
 - Python with faster-whisper (backend\long-to-short\python\requirements.txt), for StreamCuts' captions and Boss AI.
 - GEMINI_API_KEY in the environment, for StreamCuts' Boss AI (finding shorts in a long video).
+- Video Chat's folder (D:\projects\AppsToIntegrate\video chat, or VIDEO_CHAT_DIR) with its npm packages installed, and
+  Node.js: Video Chat runs its engine (downloads, transcription, AI plans, rendering) from there.
 "@ | Set-Content -Path (Join-Path $Out "README.txt") -Encoding utf8
 Get-ChildItem $Out | Select-Object Name, @{ n = "MB"; e = { if ($_.PSIsContainer) { [math]::Round((Get-ChildItem $_.FullName -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1) } else { [math]::Round($_.Length / 1MB, 1) } } } | Format-Table -AutoSize
 Write-Host "Packaged in $Out. Nothing was installed."

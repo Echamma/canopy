@@ -109,6 +109,11 @@ pub trait Host {
     fn focused(&self) -> bool {
         true
     }
+    /// Opens one of another app's projects (`app` is its descriptor id, `document` an id its `documents` lists) next to
+    /// this one, as Video Chat hands a Short to StreamCuts. False when there's no other app to open it in (running alone).
+    fn open_in(&mut self, _app: &str, _document: &str) -> bool {
+        false
+    }
 }
 
 pub trait CanopyApp {

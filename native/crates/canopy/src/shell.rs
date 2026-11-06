@@ -36,6 +36,7 @@ fn catalog() -> Vec<Slot> {
             kind: Kind::Native(&folio_native::DESCRIPTOR) },
         Slot { name: "StreamCuts", description: "Edit videos and cut clips", accent: Accent::Berry, initial: "SC", kind: Kind::Native(&streamcuts::DESCRIPTOR) },
         Slot { name: "Moodie", description: "Collect images and notes on an endless canvas", accent: Accent::Leaf, initial: "Mo", kind: Kind::Native(&canopy::moodboard::DESCRIPTOR) },
+        Slot { name: "Video Chat", description: "Find Shorts in long videos with an AI producer", accent: Accent::Moss, initial: "VC", kind: Kind::Native(&canopy::videochat::DESCRIPTOR) },
     ]
 }
 
@@ -61,6 +62,8 @@ struct PaneHost<'a> {
     slots: &'a [Slot],
     from: usize,
     focused: bool,
+    /// Projects an app asked to open in another app (the app's slot, the document), opened once the panes are drawn.
+    opens: &'a mut Vec<(usize, String)>,
 }
 
 impl Host for PaneHost<'_> {
@@ -74,6 +77,15 @@ impl Host for PaneHost<'_> {
     }
     fn focused(&self) -> bool {
         self.focused
+    }
+    fn open_in(&mut self, app: &str, document: &str) -> bool {
+        match self.slots.iter().position(|s| matches!(s.kind, Kind::Native(d) if d.id == app)) {
+            Some(index) => {
+                self.opens.push((index, document.to_owned()));
+                true
+            }
+            None => false,
+        }
     }
 }
 
@@ -102,6 +114,7 @@ pub struct Shell {
     slots: Vec<Slot>,
     open: Option<Open>,
     toasts: Vec<Toast>,
+    opens: Vec<(usize, String)>,
     new_space: Option<NewSpace>,
     home_note: String,
 }
@@ -110,7 +123,7 @@ impl Shell {
     pub fn new() -> Self {
         let profile = std::env::var_os("CANOPY_PROFILE").map(PathBuf::from).or_else(|| dirs::data_dir().map(|d| d.join("Canopy"))).unwrap_or_else(std::env::temp_dir);
         let root = std::env::var_os("CANOPY_SPACES_DIR").map(PathBuf::from).or_else(|| dirs::document_dir().map(|d| d.join("Canopy"))).unwrap_or_else(std::env::temp_dir);
-        Self { spaces: Spaces::new(profile.join("spaces.json"), root), slots: catalog(), open: None, toasts: Vec::new(), new_space: None, home_note: String::new() }
+        Self { spaces: Spaces::new(profile.join("spaces.json"), root), slots: catalog(), open: None, toasts: Vec::new(), opens: Vec::new(), new_space: None, home_note: String::new() }
     }
 
     /// `canopy <space folder>` opens that space (from a shortcut, Explorer, or tests).
@@ -178,7 +191,7 @@ impl Shell {
             self.toasts.push(Toast { text: format!("{} isn't in Canopy yet; open it from its own window", slot.name), file: None, targets: Vec::new(), at: Instant::now() });
             return;
         };
-        let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused: true };
+        let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused: true, opens: &mut self.opens };
         let receipt = match position {
             Some(position) => app.receive_at(files.clone(), position, &mut host),
             None => app.receive(files.clone(), &mut host),
@@ -355,7 +368,7 @@ impl Shell {
         let (cycle, jump) = ctx.input_mut(|i| {
             let back = i.consume_key(Modifiers::CTRL | Modifiers::SHIFT, Key::Tab);
             let forward = !back && i.consume_key(Modifiers::CTRL, Key::Tab);
-            let jump = [Key::Num1, Key::Num2, Key::Num3, Key::Num4].iter().position(|k| i.consume_key(Modifiers::CTRL, *k));
+            let jump = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5].iter().position(|k| i.consume_key(Modifiers::CTRL, *k));
             (if back { -1 } else if forward { 1 } else { 0 }, jump)
         });
         if cycle != 0 {
@@ -374,6 +387,15 @@ impl Shell {
         let main = Rect::from_min_max(pos2(sidebar.right() + 6.0, body.top()), body.max);
         self.sidebar(ui, sidebar);
         self.main(ui, main);
+        // An app asked to open a project in another one (Video Chat hands a Short to StreamCuts).
+        for (index, document) in std::mem::take(&mut self.opens) {
+            self.show_app(&ctx, index);
+            if let Some(app) = self.open.as_mut().and_then(|open| open.apps.get_mut(&index)) {
+                let mut opens = Vec::new();
+                let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused: true, opens: &mut opens };
+                app.open_document(&document, &mut host);
+            }
+        }
 
         // Files dropped from Explorer: onto the sidebar they join the space's Files; onto a pane, the app gets them.
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
@@ -598,7 +620,7 @@ impl Shell {
             self.show_app(&ctx, index);
             if let Some(open) = &mut self.open {
                 if let Some(app) = open.apps.get_mut(&index) {
-                    let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused: true };
+                    let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused: true, opens: &mut self.opens };
                     app.open_document(&id, &mut host);
                 }
             }
@@ -631,7 +653,7 @@ impl Shell {
                     show = Some(index);
                 }
             }
-            ui.painter().text(pos2(center.x, center.y + 110.0), Align2::CENTER_CENTER, "Ctrl+Tab moves between apps. Ctrl+1 through Ctrl+4 jump to one.", font::ui(13.0), color::INK_MUTED);
+            ui.painter().text(pos2(center.x, center.y + 110.0), Align2::CENTER_CENTER, "Ctrl+Tab moves between apps. Ctrl+1 through Ctrl+5 jump to one.", font::ui(13.0), color::INK_MUTED);
             if let Some(index) = show {
                 self.show_app(&ctx, index);
             }
@@ -672,7 +694,7 @@ impl Shell {
                 Kind::Native(_) => {
                     let Some(open) = &mut self.open else { return };
                     if let Some(app) = open.apps.get_mut(&index) {
-                        let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused };
+                        let mut host = PaneHost { toasts: &mut self.toasts, slots: &self.slots, from: index, focused, opens: &mut self.opens };
                         ui.scope_builder(UiBuilder::new().max_rect(body), |ui| {
                             ui.set_clip_rect(body);
                             app.ui(ui, &mut host);
@@ -778,6 +800,7 @@ impl eframe::App for Shell {
 
     fn on_exit(&mut self) {
         self.close_space();
+        canopy::videochat::shutdown();
     }
 }
 
@@ -794,7 +817,7 @@ mod tests {
             .map(|name| Slot { name, description: "", accent: Accent::Leaf, initial: "A", kind: Kind::External { exe: PathBuf::new(), accepts: |_| true } })
             .into();
         let open = Open { space, info, apps: HashMap::new(), visible: Vec::new(), focused: None, split: false, files: Vec::new(), documents: Vec::new(), listed_at: Instant::now(), search: String::new() };
-        Shell { spaces: Spaces::new(dir.join("spaces.json"), &dir), slots, open: Some(open), toasts: Vec::new(), new_space: None, home_note: String::new() }
+        Shell { spaces: Spaces::new(dir.join("spaces.json"), &dir), slots, open: Some(open), toasts: Vec::new(), opens: Vec::new(), new_space: None, home_note: String::new() }
     }
 
     fn panes(shell: &Shell) -> (Vec<usize>, Option<usize>) {
