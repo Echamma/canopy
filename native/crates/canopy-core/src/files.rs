@@ -67,15 +67,84 @@ pub fn resolve_inside(dir: &Path, name: &str) -> Result<PathBuf> {
     Ok(dir.join(name))
 }
 
+/// A name's extension with its dot, counting the projects' double ones (".folio.json") as one.
+fn full_extension(name: &str) -> String {
+    let lower = name.to_lowercase();
+    match [".folio.json", ".streamcuts.json"].iter().find(|ext| lower.ends_with(*ext)) {
+        Some(ext) => name[name.len() - ext.len()..].to_string(),
+        None => Path::new(name).extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default(),
+    }
+}
+
+/// Renames a file in the folder and returns its new name. A name typed without an extension keeps the file's own;
+/// a name another file already has is refused.
+pub fn rename(dir: &Path, from: &str, to: &str) -> Result<String> {
+    let source = resolve_inside(dir, from)?;
+    if to.trim().is_empty() {
+        return Err(Error("Give the file a name.".into()));
+    }
+    let mut name = safe_file_name(to.trim());
+    if Path::new(&name).extension().is_none() {
+        name.push_str(&full_extension(from));
+    }
+    if name == from {
+        return Ok(name);
+    }
+    let target = dir.join(&name);
+    // Windows names ignore case, so "Clip.mp4" to "clip.mp4" is the same file, not a clash.
+    if target.exists() && name.to_lowercase() != from.to_lowercase() {
+        return Err(Error(format!("There's already a file named {name}.")));
+    }
+    fs::rename(source, target)?;
+    Ok(name)
+}
+
+/// Moves a file to the Recycle Bin, where it can be restored from.
+#[cfg(windows)]
+pub fn recycle(path: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    #[repr(C)]
+    struct FileOp {
+        window: *mut std::ffi::c_void,
+        function: u32,
+        from: *const u16,
+        to: *const u16,
+        flags: u16,
+        aborted: i32,
+        mappings: *mut std::ffi::c_void,
+        title: *const u16,
+    }
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SHFileOperationW(operation: *mut FileOp) -> i32;
+    }
+    const FO_DELETE: u32 = 3;
+    // Silent, no confirmation, allow undo (the Recycle Bin), no error boxes.
+    const FLAGS: u16 = 0x0004 | 0x0010 | 0x0040 | 0x0400;
+    // With a relative path the shell deletes for good instead of recycling.
+    if !path.is_absolute() || !path.is_file() {
+        return Err(Error("That file is no longer there.".into()));
+    }
+    // The list of paths ends with two NULs.
+    let from: Vec<u16> = path.as_os_str().encode_wide().chain([0, 0]).collect();
+    let mut operation = FileOp { window: std::ptr::null_mut(), function: FO_DELETE, from: from.as_ptr(), to: std::ptr::null(), flags: FLAGS, aborted: 0, mappings: std::ptr::null_mut(), title: std::ptr::null() };
+    // SAFETY: SHFileOperationW reads a SHFILEOPSTRUCTW we own, whose path list outlives the call.
+    let code = unsafe { SHFileOperationW(&mut operation) };
+    if code != 0 || operation.aborted != 0 || path.exists() {
+        return Err(Error(format!("{} couldn't be moved to the Recycle Bin.", path.file_name().unwrap_or_default().to_string_lossy())));
+    }
+    Ok(())
+}
+
+/// Without a Recycle Bin to move it to, the file is deleted.
+#[cfg(not(windows))]
+pub fn recycle(path: &Path) -> Result<()> {
+    Ok(fs::remove_file(path)?)
+}
+
 fn candidates(name: &str) -> impl Iterator<Item = String> {
     let safe = safe_file_name(name);
-    let ext = if safe.to_lowercase().ends_with(".folio.json") {
-        ".folio.json".to_string()
-    } else if safe.to_lowercase().ends_with(".streamcuts.json") {
-        ".streamcuts.json".to_string()
-    } else {
-        Path::new(&safe).extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default()
-    };
+    let ext = full_extension(&safe);
     let stem = safe[..safe.len() - ext.len()].to_string();
     let stem = if stem.is_empty() { "file".to_string() } else { stem };
     std::iter::once(safe).chain((2..).map(move |n| format!("{stem} ({n}){ext}")))
@@ -223,6 +292,37 @@ mod tests {
         assert_eq!(fs::read_to_string(dir.join("clip.mp4")).unwrap(), "video");
         fs::remove_dir_all(dir).unwrap();
         fs::remove_dir_all(source_dir).unwrap();
+    }
+
+    #[test]
+    fn rename_keeps_the_extension_and_never_replaces_a_file() {
+        let dir = folder("rename");
+        fs::write(dir.join("clip.mp4"), "video").unwrap();
+        fs::write(dir.join("other.mp4"), "other").unwrap();
+        fs::write(dir.join("story.folio.json"), "{}").unwrap();
+        assert_eq!(rename(&dir, "clip.mp4", " intro ").unwrap(), "intro.mp4");
+        assert_eq!(rename(&dir, "story.folio.json", "launch").unwrap(), "launch.folio.json");
+        assert_eq!(rename(&dir, "intro.mp4", "Intro.mp4").unwrap(), "Intro.mp4");
+        assert_eq!(rename(&dir, "Intro.mp4", "cut.mov").unwrap(), "cut.mov");
+        assert!(rename(&dir, "cut.mov", "other.mp4").is_err());
+        assert!(rename(&dir, "cut.mov", "  ").is_err());
+        assert!(rename(&dir, "../cut.mov", "x").is_err());
+        assert_eq!(fs::read_to_string(dir.join("cut.mov")).unwrap(), "video");
+        assert_eq!(fs::read_to_string(dir.join("other.mp4")).unwrap(), "other");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Puts a small file in the real Recycle Bin: run alone with `--ignored`.
+    #[test]
+    #[ignore]
+    fn recycle_moves_a_file_to_the_recycle_bin() {
+        let dir = folder("recycle");
+        let file = dir.join("canopy-recycle-test.txt");
+        fs::write(&file, "x").unwrap();
+        recycle(&file).unwrap();
+        assert!(!file.exists());
+        assert!(recycle(&file).is_err());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

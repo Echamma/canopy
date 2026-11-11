@@ -1,6 +1,8 @@
 // Canopy, native: one window for your apps, with shared spaces and files.
 #![windows_subsystem = "windows"]
 
+mod layout;
+mod quick;
 mod shell;
 
 fn main() -> eframe::Result {

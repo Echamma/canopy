@@ -109,6 +109,8 @@ pub enum Icon {
     Captions,
     Text,
     Lock,
+    Sidebar,
+    Swap,
 }
 
 /// Draws a rounded line icon (1.75 stroke on a 24 grid) filling `rect`.
@@ -231,6 +233,16 @@ pub fn icon(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Lock => {
             painter.rect_stroke(Rect::from_min_max(p(5.0, 11.0), p(19.0, 21.0)), (2.0 * scale) as u8, stroke, egui::StrokeKind::Middle);
             line(&[(8.0, 11.0), (8.0, 7.5), (9.2, 4.8), (12.0, 3.6), (14.8, 4.8), (16.0, 7.5), (16.0, 11.0)]);
+        }
+        Icon::Sidebar => {
+            painter.rect_stroke(Rect::from_min_max(p(3.0, 4.0), p(21.0, 20.0)), (2.0 * scale) as u8, stroke, egui::StrokeKind::Middle);
+            line(&[(9.0, 4.0), (9.0, 20.0)]);
+        }
+        Icon::Swap => {
+            line(&[(4.0, 8.0), (20.0, 8.0)]);
+            line(&[(16.0, 4.0), (20.0, 8.0), (16.0, 12.0)]);
+            line(&[(20.0, 16.0), (4.0, 16.0)]);
+            line(&[(8.0, 12.0), (4.0, 16.0), (8.0, 20.0)]);
         }
         Icon::Text => {
             line(&[(6.0, 6.0), (18.0, 6.0)]);

@@ -217,6 +217,24 @@ impl Spaces {
         Ok(space)
     }
 
+    /// Changes a space's leaf color, in the list and in its folder's manifest.
+    pub fn recolor(&self, id: &str, color: &str) -> Result<Space> {
+        if !COLORS.contains(&color) {
+            return Err(Error("That isn't one of Canopy's colors.".into()));
+        }
+        let mut spaces = self.load();
+        let space = spaces.iter_mut().find(|space| space.id == id).ok_or_else(|| Error("That space is no longer listed.".into()))?;
+        space.color = color.to_string();
+        let space = space.clone();
+        self.save(&spaces)?;
+        let manifest_file = SpacePaths::new(&space.dir).manifest();
+        if let Some(mut manifest) = fs::read(&manifest_file).ok().and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()) {
+            manifest["color"] = serde_json::Value::String(color.to_string());
+            write_atomic(&manifest_file, &serde_json::to_vec_pretty(&manifest)?)?;
+        }
+        Ok(space)
+    }
+
     /// Takes a space off the list; its folder and files stay where they are.
     pub fn forget(&self, id: &str) -> Result<()> {
         let spaces: Vec<_> = self.load().into_iter().filter(|space| space.id != id).collect();
@@ -312,6 +330,10 @@ mod tests {
         assert_eq!(spaces.get(&space.id).unwrap().name, "Final");
         let manifest: serde_json::Value = serde_json::from_slice(&fs::read(SpacePaths::new(&space.dir).manifest()).unwrap()).unwrap();
         assert_eq!(manifest["name"], "Final");
+        assert!(spaces.recolor(&space.id, "purple").is_err());
+        assert_eq!(spaces.recolor(&space.id, "berry").unwrap().color, "berry");
+        let manifest: serde_json::Value = serde_json::from_slice(&fs::read(SpacePaths::new(&space.dir).manifest()).unwrap()).unwrap();
+        assert_eq!((manifest["color"].as_str(), manifest["name"].as_str()), (Some("berry"), Some("Final")));
         fs::remove_dir_all(root).unwrap();
     }
 
