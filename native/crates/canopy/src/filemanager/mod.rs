@@ -6,7 +6,7 @@ mod dragout;
 pub mod notes;
 
 use crate::videochat::engine;
-use canopy_ui::canopy_core::files::{Kind, copy_into, kind_of, safe_file_name, write_atomic};
+use canopy_ui::canopy_core::files::{Kind, copy_into, kind_of, recycle, safe_file_name, unique_name, write_atomic};
 use canopy_ui::{Accent, AppDescriptor, CanopyApp, Document, Host, Icon, Mood, Place, Receipt, SharedFile, color, font, icon_button, muted, primary_button, quiet_button, section_label};
 use egui::{Align, Align2, Color32, Layout, Rect, RichText, Sense, Stroke, StrokeKind, TextureHandle, TextureOptions, Ui, UiBuilder, pos2, vec2};
 use notes::{Note, Notes, Rendered};
@@ -109,6 +109,14 @@ pub struct FileManager {
     thumb_done: Receiver<(PathBuf, Option<Frame>)>,
     rename: Option<(PathBuf, String)>,
     toasts: Vec<String>,
+    /// This pane has the keyboard and no dialog is up.
+    focused: bool,
+    /// The row the arrow keys are on, and a row to scroll to once.
+    cursor: Option<PathBuf>,
+    reveal: Option<PathBuf>,
+    /// Only this kind of file is listed (folders always are).
+    filter: Option<Kind>,
+    focus_search: bool,
 }
 
 fn profile() -> PathBuf {
@@ -172,6 +180,11 @@ impl FileManager {
             thumb_jobs,
             thumb_done,
             rename: None,
+            focused: false,
+            cursor: None,
+            reveal: None,
+            filter: None,
+            focus_search: false,
             toasts: Vec::new(),
         }
     }
@@ -366,6 +379,38 @@ impl FileManager {
             self.selected = vec![entry.path.clone()];
         }
         self.anchor = Some(entry.path.clone());
+        self.cursor = Some(entry.path.clone());
+    }
+
+    /// Moves the selected files to the Recycle Bin. Folders and the clips Video Chat keeps track of stay.
+    fn recycle_selected(&mut self) {
+        self.commit_draft();
+        let chosen: Vec<Entry> = self.entries.iter().filter(|e| self.selected.contains(&e.path)).cloned().collect();
+        let (mut moved, mut kept) = (0, 0);
+        for entry in &chosen {
+            if entry.folder || entry.rendered.is_some() || recycle(&entry.path).is_err() {
+                kept += 1;
+            } else {
+                moved += 1;
+            }
+        }
+        match (moved, kept) {
+            (0, 0) => return,
+            (0, _) => self.toasts.push("Folders and Video Chat's clips aren't deleted from here".into()),
+            (1, _) => self.toasts.push(format!("Moved {} to the Recycle Bin", chosen.iter().find(|e| !e.path.exists()).map(|e| e.name.as_str()).unwrap_or("it"))),
+            (n, _) => self.toasts.push(format!("Moved {n} files to the Recycle Bin")),
+        }
+        self.draft = None;
+        self.selected.clear();
+        self.listed_at = Instant::now() - Duration::from_secs(600);
+    }
+
+    fn up(&mut self) {
+        if let Location::Folder(dir) = &self.location {
+            if let Some(parent) = dir.parent().map(Path::to_path_buf) {
+                self.go(Location::Folder(parent));
+            }
+        }
     }
 
     fn open(&mut self, entry: &Entry) {
@@ -377,12 +422,19 @@ impl FileManager {
     }
 
     fn rename_file(&mut self, from: &Path, name: &str) -> Result<PathBuf, String> {
-        let name = safe_file_name(name.trim());
+        let mut name = safe_file_name(name.trim());
+        // A file renamed without an extension keeps its own.
+        if !from.is_dir() && Path::new(&name).extension().is_none() {
+            if let Some(extension) = from.extension() {
+                name = format!("{name}.{}", extension.to_string_lossy());
+            }
+        }
         let to = from.with_file_name(&name);
         if to == from {
             return Ok(to);
         }
-        if to.exists() {
+        let same_file = from.file_name().is_some_and(|old| old.to_string_lossy().to_lowercase() == name.to_lowercase());
+        if to.exists() && !same_file {
             return Err(format!("There's already a {name} here."));
         }
         std::fs::rename(from, &to).map_err(|e| e.to_string())?;
@@ -491,6 +543,7 @@ impl CanopyApp for FileManager {
             host.toast(toast);
         }
         self.ctx.request_repaint_after(Duration::from_secs(2));
+        self.focused = host.focused() && self.rename.is_none();
         let rect = ui.max_rect();
         let places_w = 210.0;
         let details_w = if rect.width() > 900.0 { 330.0 } else { 270.0 };
@@ -502,11 +555,27 @@ impl CanopyApp for FileManager {
         card(ui, right, |ui| self.details(ui, host));
         self.rename_dialog(ui);
         if host.focused() && self.rename.is_none() && !ui.ctx().memory(|m| m.focused().is_some()) {
-            let (back, all, delete_hint) = ui.input_mut(|i| (
+            let (back, all, delete_hint, delete, find, up, reload) = ui.input_mut(|i| (
                 i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace),
                 i.consume_key(egui::Modifiers::COMMAND, egui::Key::A),
                 i.consume_key(egui::Modifiers::NONE, egui::Key::F2),
+                i.consume_key(egui::Modifiers::NONE, egui::Key::Delete),
+                i.consume_key(egui::Modifiers::COMMAND, egui::Key::F),
+                i.consume_key(egui::Modifiers::ALT, egui::Key::ArrowUp),
+                i.consume_key(egui::Modifiers::NONE, egui::Key::F5),
             ));
+            if delete {
+                self.recycle_selected();
+            }
+            if find {
+                self.focus_search = true;
+            }
+            if up {
+                self.up();
+            }
+            if reload {
+                self.listed_at = Instant::now() - Duration::from_secs(600);
+            }
             if back {
                 if let Some(previous) = self.history.pop() {
                     self.location = previous;
@@ -650,7 +719,7 @@ impl FileManager {
                 Location::Folder(dir) => dir.parent().map(Path::to_path_buf),
                 _ => None,
             };
-            if ui.add_enabled(parent.is_some(), egui::Button::new("Up").small()).on_hover_text("Up a folder").clicked() {
+            if ui.add_enabled(parent.is_some(), egui::Button::new("Up").small()).on_hover_text("Up a folder (Alt+Up)").clicked() {
                 go = parent.map(Location::Folder);
             }
             let title = match &self.location {
@@ -665,6 +734,16 @@ impl FileManager {
                 if let Location::Folder(dir) = self.location.clone() {
                     if ui.small_button("Show in Explorer").clicked() {
                         open_with_default(&dir);
+                    }
+                    if ui.small_button("New folder").clicked() {
+                        let folder = dir.join(unique_name(&dir, "New folder"));
+                        match std::fs::create_dir(&folder) {
+                            Ok(()) => {
+                                self.rename = Some((folder.clone(), folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
+                                self.listed_at = Instant::now() - Duration::from_secs(600);
+                            }
+                            Err(error) => self.toasts.push(format!("Couldn't make a folder here: {error}")),
+                        }
                     }
                     let pinned = self.prefs.pinned.contains(&dir);
                     if ui.small_button(if pinned { "Unpin" } else { "Pin" }).on_hover_text(if pinned { "Take this folder off the left" } else { "Keep this folder on the left, under Pinned" }).clicked() {
@@ -684,7 +763,26 @@ impl FileManager {
                 }
             });
         });
-        ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search names, titles and descriptions").desired_width(f32::INFINITY).margin(vec2(8.0, 5.0)));
+        let search = ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search names, titles and descriptions (Ctrl+F)").desired_width(f32::INFINITY).margin(vec2(8.0, 5.0)));
+        if std::mem::take(&mut self.focus_search) {
+            search.request_focus();
+        }
+        // Show only one kind of file, and how much is here.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            for (label, kind) in [("All", None), ("Videos", Some(Kind::Video)), ("Pictures", Some(Kind::Image)), ("Sound", Some(Kind::Audio))] {
+                if ui.selectable_label(self.filter == kind, label).clicked() {
+                    self.filter = kind;
+                }
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let count = match (self.entries.len(), self.selected.len()) {
+                    (all, 0) => format!("{all} item{}", if all == 1 { "" } else { "s" }),
+                    (all, chosen) => format!("{chosen} of {all} selected"),
+                };
+                ui.label(muted(count).font(font::ui(12.0)));
+            });
+        });
         ui.add_space(4.0);
         if let Some(location) = go {
             self.go(location);
@@ -696,6 +794,9 @@ impl FileManager {
             .clone()
             .into_iter()
             .filter(|e| {
+                if !e.folder && self.filter.is_some_and(|kind| e.kind != kind) {
+                    return false;
+                }
                 if query.is_empty() {
                     return true;
                 }
@@ -719,12 +820,45 @@ impl FileManager {
         let mut dragged = None;
         let mut renamed = None;
         let mut copied = None;
+        let mut duplicated = None;
+        let mut recycled = None;
+        // Arrows walk the list (Shift selects along the way) and Enter opens.
+        if self.focused && !ui.ctx().memory(|m| m.focused().is_some()) {
+            let (step, extend, enter) = ui.input(|i| {
+                let step = if i.modifiers.alt { 0 } else { i.key_pressed(egui::Key::ArrowDown) as i32 - i.key_pressed(egui::Key::ArrowUp) as i32 };
+                (step, i.modifiers.shift, i.key_pressed(egui::Key::Enter))
+            });
+            if step != 0 {
+                let at = self.cursor.as_ref().and_then(|cursor| shown.iter().position(|e| &e.path == cursor));
+                let next = match at {
+                    Some(at) => (at as i32 + step).clamp(0, shown.len() as i32 - 1) as usize,
+                    None => if step > 0 { 0 } else { shown.len() - 1 },
+                };
+                let entry = shown[next].clone();
+                if extend && self.anchor.is_some() {
+                    let anchor = self.anchor.clone();
+                    self.click(&entry, false, true);
+                    self.anchor = anchor;
+                    self.cursor = Some(entry.path.clone());
+                } else {
+                    self.click(&entry, false, false);
+                }
+                self.reveal = Some(entry.path);
+            }
+            if enter {
+                opened = shown.iter().find(|e| self.selected.contains(&e.path)).cloned();
+            }
+        }
         egui::ScrollArea::vertical().id_salt("fm-list").auto_shrink(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 3.0;
             for entry in &shown {
                 let note = self.note(entry);
                 let selected = self.selected.contains(&entry.path);
                 let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 54.0), Sense::click_and_drag());
+                if self.reveal.as_ref() == Some(&entry.path) {
+                    response.scroll_to_me(None);
+                    self.reveal = None;
+                }
                 if !ui.is_rect_visible(rect) {
                     continue;
                 }
@@ -802,8 +936,20 @@ impl FileManager {
                         let _ = std::process::Command::new("explorer").arg(format!("/select,{}", entry.path.display())).spawn();
                         ui.close();
                     }
+                    if ui.button("Copy path").clicked() {
+                        copied = Some(entry.path.display().to_string());
+                        ui.close();
+                    }
                     if entry.rendered.is_none() && ui.button("Rename…").clicked() {
                         renamed = Some(entry.clone());
+                        ui.close();
+                    }
+                    if !entry.folder && ui.button("Duplicate").clicked() {
+                        duplicated = Some(entry.clone());
+                        ui.close();
+                    }
+                    if !entry.folder && entry.rendered.is_none() && ui.button("Move to the Recycle Bin").clicked() {
+                        recycled = Some(entry.clone());
                         ui.close();
                     }
                 });
@@ -817,6 +963,21 @@ impl FileManager {
         }
         if let Some(entry) = renamed {
             self.rename = Some((entry.path.clone(), entry.name.clone()));
+        }
+        if let Some(entry) = duplicated {
+            match entry.path.parent().map(|dir| copy_into(dir, &entry.path)) {
+                Some(Ok(copy)) => self.toasts.push(format!("Made {copy}")),
+                Some(Err(error)) => self.toasts.push(error.0),
+                None => {}
+            }
+            self.listed_at = Instant::now() - Duration::from_secs(600);
+        }
+        if let Some(entry) = recycled {
+            // The file that was right-clicked goes, with the rest of the selection when it's part of it.
+            if !self.selected.contains(&entry.path) {
+                self.selected = vec![entry.path.clone()];
+            }
+            self.recycle_selected();
         }
         if let Some(text) = copied.filter(|t| !t.is_empty()) {
             set_clipboard(&self.ctx, &text);
@@ -838,6 +999,9 @@ impl FileManager {
                 [] => {
                     section_label(ui, "Posting");
                     ui.add(egui::Label::new(muted("Pick a file to give it a title and a description. Then drag it into TikTok (or anywhere): its description goes on the clipboard, so paste it as the caption.")).wrap());
+                    ui.add_space(8.0);
+                    section_label(ui, "Keys");
+                    ui.add(egui::Label::new(muted("Arrows move and Enter opens. F2 renames, Delete moves to the Recycle Bin, Ctrl+F searches, Alt+Up goes up a folder, Backspace goes back.").font(font::ui(12.0))).wrap());
                 }
                 [entry] if !entry.folder => self.one(ui, entry.clone(), host),
                 [entry] => {
@@ -955,8 +1119,9 @@ impl FileManager {
             ui.set_width(380.0);
             ui.label(RichText::new("Rename").font(font::display(20.0)));
             let field = ui.add(egui::TextEdit::singleline(&mut name).desired_width(f32::INFINITY).margin(vec2(10.0, 8.0)));
+            // The field keeps the keyboard while the dialog is up, so Enter is read from the keys.
             field.request_focus();
-            let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
             ui.add_space(8.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if primary_button(ui, "Rename", Mood::Ember).clicked() || enter {
