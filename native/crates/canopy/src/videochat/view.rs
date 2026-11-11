@@ -692,21 +692,21 @@ fn transport_bar(app: &mut VideoChat, ui: &mut Ui, rect: Rect, host: &mut dyn Ho
                 ui.label(muted("The player starts once the video is read."));
                 return;
             };
-            if icon_button(ui, Icon::SkipBack, "Back 10 seconds (Shift+Left: 1 s)", false).clicked() {
+            if icon_button(ui, Icon::SkipBack, "Back 10 seconds (J; Left: 5 s; Shift+Left: 1 s)", false).clicked() {
                 player.seek(player.playhead - 10.0);
             }
             let playing = player.playing();
-            if icon_button(ui, if playing { Icon::Pause } else { Icon::Play }, if playing { "Pause (Space)" } else { "Play (Space)" }, playing).clicked() {
+            if icon_button(ui, if playing { Icon::Pause } else { Icon::Play }, if playing { "Pause (Space or K)" } else { "Play (Space or K)" }, playing).clicked() {
                 player.toggle();
             }
-            if icon_button(ui, Icon::SkipForward, "On 10 seconds (Shift+Right: 1 s)", false).clicked() {
+            if icon_button(ui, Icon::SkipForward, "On 10 seconds (L; Right: 5 s; Shift+Right: 1 s)", false).clicked() {
                 player.seek(player.playhead + 10.0);
             }
             ui.add_space(6.0);
             ui.label(RichText::new(format!("{} / {}", clock_tenths(player.playhead), clock(player.duration()))).font(font::ui(13.0)).color(color::INK));
             if let Some(clip) = &selected {
                 ui.add_space(8.0);
-                if quiet_button(ui, "Play this clip", Some(Icon::Play)).on_hover_text("From its start to its end").clicked() {
+                if quiet_button(ui, "Play this clip", Some(Icon::Play)).on_hover_text("From its start to its end (Enter). Up and Down step through the clips.").clicked() {
                     player.play_span(clip.start_seconds, clip.end_seconds);
                 }
                 if selected_ref.is_some_and(|s| s.kind == ClipKind::Short) && quiet_button(ui, "Edit in StreamCuts", Some(Icon::Scissors)).on_hover_text("Opens this Short in StreamCuts as a cut of the whole video: drag its edges to grow it (E)").clicked() {
@@ -1693,8 +1693,9 @@ fn dialogs(app: &mut VideoChat, ui: &mut Ui) {
             ui.label(RichText::new("Rename the project").font(font::display(20.0)));
             ui.label(muted("A download it came from is renamed too."));
             let field = ui.add(egui::TextEdit::singleline(&mut name).desired_width(f32::INFINITY).margin(vec2(10.0, 8.0)));
+            // The field keeps the keyboard while the dialog is up, so Enter is read from the keys.
             field.request_focus();
-            let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            let enter = ui.input(|i| i.key_pressed(Key::Enter));
             ui.add_space(8.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if primary_button(ui, "Rename", Mood::Ember).clicked() || enter {
@@ -1761,16 +1762,53 @@ fn dialogs(app: &mut VideoChat, ui: &mut Ui) {
     }
 }
 
-/// Space plays, arrows move, I and O set the selected clip's edges, E opens it in StreamCuts, Delete removes it,
+/// Space or K plays, arrows move (J and L: 10 s; Home and End: the ends), Up and Down step through the clips,
+/// Enter plays the selected one, I and O set its edges, E opens it in StreamCuts, Delete removes it,
 /// Ctrl+Z and Ctrl+Y undo and redo plan edits. Not while typing.
 fn shortcuts(app: &mut VideoChat, ui: &mut Ui, host: &mut dyn Host) {
     if ui.ctx().memory(|m| m.focused().is_some()) || app.open.is_none() || app.rename.is_some() || app.confirm.is_some() {
         return;
     }
     let pressed = |ui: &mut Ui, modifiers: Modifiers, key: Key| ui.input_mut(|i| i.consume_key(modifiers, key));
-    if pressed(ui, Modifiers::NONE, Key::Space) {
+    if pressed(ui, Modifiers::NONE, Key::Space) | pressed(ui, Modifiers::NONE, Key::K) {
         if let Some(player) = app.open.as_mut().and_then(|o| o.player.as_mut()) {
             player.toggle();
+        }
+    }
+    for (key, step) in [(Key::J, -10.0), (Key::L, 10.0)] {
+        if pressed(ui, Modifiers::NONE, key) {
+            app.seek(app.playhead() + step);
+        }
+    }
+    if pressed(ui, Modifiers::NONE, Key::Home) {
+        app.seek(0.0);
+    }
+    if pressed(ui, Modifiers::NONE, Key::End) {
+        let end = app.open.as_ref().and_then(|o| o.player.as_ref()).map_or(0.0, |p| p.duration());
+        app.seek((end - 1.0).max(0.0));
+    }
+    // Up and Down go through the Shorts (or the chapters, with one selected); with nothing selected, Down picks the first.
+    let step = pressed(ui, Modifiers::NONE, Key::ArrowDown) as i64 - pressed(ui, Modifiers::NONE, Key::ArrowUp) as i64;
+    if step != 0 {
+        let selected = app.open.as_ref().and_then(|o| o.selected);
+        let kind = selected.map_or(ClipKind::Short, |s| s.kind);
+        let count = app.open.as_ref().and_then(|o| o.plan.as_ref()).map_or(0, |plan| match kind {
+            ClipKind::Short => plan.shorts.len(),
+            ClipKind::Chapter => plan.longer_segments.len(),
+        });
+        if count > 0 {
+            let next = match selected {
+                Some(s) => (s.index as i64 + step).clamp(0, count as i64 - 1) as usize,
+                None => if step > 0 { 0 } else { count - 1 },
+            };
+            app.select(kind, next);
+        }
+    }
+    if pressed(ui, Modifiers::NONE, Key::Enter) {
+        if let Some((from, to)) = app.selected_clip().map(|clip| (clip.start_seconds, clip.end_seconds)) {
+            if let Some(player) = app.open.as_mut().and_then(|o| o.player.as_mut()) {
+                player.play_span(from, to);
+            }
         }
     }
     for (key, step) in [(Key::ArrowLeft, -5.0), (Key::ArrowRight, 5.0)] {
