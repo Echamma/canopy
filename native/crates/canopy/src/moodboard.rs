@@ -154,6 +154,9 @@ struct Board {
     name: String,
     saved_at: u64,
     cards: Vec<Card>,
+    /// Where the board was being looked at (pan x, pan y, zoom), so it reopens there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    view: Option<[f32; 3]>,
 }
 
 impl Board {
@@ -168,7 +171,16 @@ impl Board {
             name,
             saved_at: now(),
             cards: Vec::new(),
+            view: None,
         }
+    }
+}
+
+/// The pan and zoom a board was last seen at.
+fn view_of(board: &Board) -> (Vec2, f32) {
+    match board.view {
+        Some([x, y, zoom]) if x.is_finite() && y.is_finite() && zoom.is_finite() => (vec2(x, y), zoom.clamp(0.1, 4.0)),
+        _ => (Vec2::ZERO, 1.0),
     }
 }
 
@@ -236,6 +248,13 @@ struct Moodboard {
     dirty: bool,
     last_edit: f64,
     error: Option<String>,
+    /// The cards as they were before the edit in progress, and the states Ctrl+Z and Ctrl+Y step through.
+    before: Vec<Card>,
+    undo: Vec<Vec<Card>>,
+    redo: Vec<Vec<Card>>,
+    /// When the cards last changed; `stale` says `before` is behind them.
+    edited: Option<Instant>,
+    stale: bool,
 }
 
 struct PlayingVideo {
@@ -255,13 +274,19 @@ impl Moodboard {
             .first()
             .cloned()
             .unwrap_or_else(|| Board::new("Untitled board".into()));
+        let (pan, zoom) = view_of(&board);
         Self {
+            before: board.cards.clone(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+            edited: None,
+            stale: false,
             place,
             board,
             boards,
             selected: None,
-            pan: Vec2::ZERO,
-            zoom: 1.0,
+            pan,
+            zoom,
             canvas: Rect::NOTHING,
             textures: HashMap::new(),
             pending: Vec::new(),
@@ -281,8 +306,89 @@ impl Moodboard {
         self.canvas.center() + self.pan + vec2(x, y) * self.zoom
     }
     fn mark(&mut self, ui: &Ui) {
+        self.record();
         self.dirty = true;
         self.last_edit = ui.input(|i| i.time);
+    }
+    /// Notes that the cards just changed. Changes that follow each other closely (a drag, typing) undo as one.
+    fn record(&mut self) {
+        if self.edited.is_none() {
+            self.undo.push(std::mem::take(&mut self.before));
+            if self.undo.len() > 100 {
+                self.undo.remove(0);
+            }
+            self.redo.clear();
+        }
+        self.edited = Some(Instant::now());
+        self.stale = true;
+    }
+    /// Once an edit has rested, the next change starts a new undo step.
+    fn settle(&mut self) {
+        if self.edited.is_some_and(|at| at.elapsed().as_millis() > 600) {
+            self.edited = None;
+        }
+        if self.edited.is_none() && self.stale {
+            self.before = self.board.cards.clone();
+            self.stale = false;
+        }
+    }
+    /// Ctrl+Z (`back`) or Ctrl+Y. False when there's nothing to step to.
+    fn step(&mut self, back: bool) -> bool {
+        self.edited = None;
+        let (from, to) = if back { (&mut self.undo, &mut self.redo) } else { (&mut self.redo, &mut self.undo) };
+        let Some(cards) = from.pop() else { return false };
+        to.push(std::mem::replace(&mut self.board.cards, cards));
+        self.before = self.board.cards.clone();
+        self.stale = false;
+        if !self.board.cards.iter().any(|c| Some(c.id) == self.selected) {
+            self.selected = None;
+        }
+        self.playing = None;
+        self.dirty = true;
+        self.last_edit = 0.0;
+        true
+    }
+    fn fresh_history(&mut self) {
+        self.before = self.board.cards.clone();
+        self.undo.clear();
+        self.redo.clear();
+        self.edited = None;
+        self.stale = false;
+    }
+    fn remove_selected(&mut self) -> bool {
+        let Some(id) = self.selected.take() else { return false };
+        if self.playing.as_ref().is_some_and(|p| p.id == id) {
+            self.playing = None;
+        }
+        self.board.cards.retain(|c| c.id != id);
+        true
+    }
+    fn duplicate_selected(&mut self) -> bool {
+        let Some(mut card) = self.board.cards.iter().find(|c| Some(c.id) == self.selected).cloned() else { return false };
+        card.id = self.next_id();
+        card.x += 24.0;
+        card.y += 24.0;
+        self.selected = Some(card.id);
+        self.board.cards.push(card);
+        true
+    }
+    /// The middle of what's on screen, in the board's own coordinates.
+    fn view_center(&self) -> Pos2 {
+        if self.canvas.is_positive() { self.world(self.canvas.center()) } else { Pos2::ZERO }
+    }
+    fn fit_all(&mut self) {
+        if self.board.cards.is_empty() {
+            self.pan = Vec2::ZERO;
+            self.zoom = 1.0;
+            return;
+        }
+        let cards = &self.board.cards;
+        let min_x = cards.iter().map(|c| c.x).fold(f32::INFINITY, f32::min);
+        let min_y = cards.iter().map(|c| c.y).fold(f32::INFINITY, f32::min);
+        let max_x = cards.iter().map(|c| c.x + c.w).fold(f32::NEG_INFINITY, f32::max);
+        let max_y = cards.iter().map(|c| c.y + c.h).fold(f32::NEG_INFINITY, f32::max);
+        self.zoom = ((self.canvas.width() - 80.0) / (max_x - min_x).max(1.0)).min((self.canvas.height() - 80.0) / (max_y - min_y).max(1.0)).clamp(0.1, 2.0);
+        self.pan = -vec2((min_x + max_x) * 0.5, (min_y + max_y) * 0.5) * self.zoom;
     }
     fn save_board(&mut self) -> Result<(), String> {
         if !self.dirty {
@@ -290,6 +396,7 @@ impl Moodboard {
         }
         fs::create_dir_all(&self.place.projects_dir).map_err(|e| e.to_string())?;
         self.board.saved_at = now();
+        self.board.view = Some([self.pan.x, self.pan.y, self.zoom]);
         let target = board_path(&self.place.projects_dir, &self.board.id);
         let temp = target.with_extension("json.tmp");
         fs::write(
@@ -306,10 +413,10 @@ impl Moodboard {
         self.save()?;
         self.board = read_board(&board_path(&self.place.projects_dir, id))?;
         self.selected = None;
-        self.pan = Vec2::ZERO;
-        self.zoom = 1.0;
+        (self.pan, self.zoom) = view_of(&self.board);
         self.textures.clear();
         self.playing = None;
+        self.fresh_history();
         Ok(())
     }
     fn add_note(&mut self, at: Pos2, ui: &Ui) {
@@ -382,6 +489,7 @@ impl Moodboard {
             receipt.accepted += 1;
         }
         if receipt.accepted > 0 {
+            self.record();
             self.dirty = true;
             self.last_edit = 0.0;
         }
@@ -472,6 +580,7 @@ impl Moodboard {
         for (_, receiver) in std::mem::take(&mut self.pending) {
             match receiver.recv() {
                 Ok(Ok(card)) => {
+                    self.record();
                     self.board.cards.push(card);
                     self.dirty = true;
                     self.last_edit = 0.0;
@@ -631,6 +740,25 @@ impl Moodboard {
                 .request_repaint_after(std::time::Duration::from_millis(33));
         }
     }
+    /// Moves the open board's file to the Recycle Bin and shows the next board (or a new one).
+    fn delete_board(&mut self, host: &mut dyn Host) {
+        let file = board_path(&self.place.projects_dir, &self.board.id);
+        if file.is_file() {
+            if let Err(error) = canopy_ui::canopy_core::files::recycle(&file) {
+                host.toast(error.0);
+                return;
+            }
+        }
+        host.toast(format!("Moved {} to the Recycle Bin", self.board.name));
+        self.boards = list_boards(&self.place.projects_dir);
+        self.board = self.boards.first().cloned().unwrap_or_else(|| Board::new("Untitled board".into()));
+        (self.pan, self.zoom) = view_of(&self.board);
+        self.selected = None;
+        self.playing = None;
+        self.textures.clear();
+        self.dirty = false;
+        self.fresh_history();
+    }
     fn texture(&mut self, ui: &Ui, file: &str) -> Option<&TextureHandle> {
         self.textures
             .entry(file.to_owned())
@@ -664,6 +792,8 @@ impl CanopyApp for Moodboard {
         );
         ui.painter()
             .rect_filled(toolbar, 0.0, Color32::from_rgb(29, 26, 18));
+        let mut delete_board = false;
+        let mut history = None;
         ui.scope_builder(
             UiBuilder::new().max_rect(toolbar.shrink2(vec2(10.0, 4.0))),
             |ui| {
@@ -705,15 +835,28 @@ impl CanopyApp for Moodboard {
                                 self.pan = Vec2::ZERO;
                                 self.zoom = 1.0;
                                 self.textures.clear();
-                                self.mark(ui);
+                                self.playing = None;
+                                self.fresh_history();
+                                self.dirty = true;
+                                self.last_edit = 0.0;
                             }
                             Err(e) => self.error = Some(e),
                         }
                     }
+                    if ui.button("Delete board").on_hover_text("Moves this board to the Recycle Bin; its pictures and videos stay in the space").clicked() {
+                        delete_board = true;
+                    }
+                    if ui.add_enabled(!self.undo.is_empty(), egui::Button::new("Undo")).on_hover_text("Ctrl+Z").clicked() {
+                        history = Some(true);
+                    }
+                    if ui.add_enabled(!self.redo.is_empty(), egui::Button::new("Redo")).on_hover_text("Ctrl+Y").clicked() {
+                        history = Some(false);
+                    }
                 });
                 ui.horizontal_centered(|ui| {
-                    if ui.button("+ Note").clicked() {
-                        self.add_note(pos2(-100.0, -80.0), ui);
+                    if ui.button("+ Note").on_hover_text("Or double-click the board").clicked() {
+                        let at = self.view_center() - vec2(120.0, 95.0);
+                        self.add_note(at, ui);
                     }
                     if ui.button("+ Images").clicked() {
                         if let Some(paths) = rfd::FileDialog::new()
@@ -721,7 +864,8 @@ impl CanopyApp for Moodboard {
                             .pick_files()
                         {
                             let files = paths.into_iter().map(SharedFile::new).collect();
-                            let receipt = self.add_images(files, pos2(-140.0, -100.0));
+                            let at = self.view_center() - vec2(140.0, 100.0);
+                            let receipt = self.add_images(files, at);
                             if receipt.accepted > 0 {
                                 host.toast(format!("Added {} image(s)", receipt.accepted));
                             }
@@ -732,53 +876,23 @@ impl CanopyApp for Moodboard {
                             .add_filter("Videos", &["mp4", "mov", "webm", "mkv", "m4v", "avi"])
                             .pick_files()
                         {
-                            let receipt = self.add_videos(
-                                paths.into_iter().map(SharedFile::new).collect(),
-                                pos2(-150.0, -100.0),
-                            );
+                            let at = self.view_center() - vec2(150.0, 100.0);
+                            let receipt = self.add_videos(paths.into_iter().map(SharedFile::new).collect(), at);
                             if let Some(note) = receipt.note {
                                 host.toast(note);
                             }
                         }
                     }
-                    if ui.button("Fit all").clicked() {
-                        if !self.board.cards.is_empty() {
-                            let min_x = self
-                                .board
-                                .cards
-                                .iter()
-                                .map(|c| c.x)
-                                .fold(f32::INFINITY, f32::min);
-                            let min_y = self
-                                .board
-                                .cards
-                                .iter()
-                                .map(|c| c.y)
-                                .fold(f32::INFINITY, f32::min);
-                            let max_x = self
-                                .board
-                                .cards
-                                .iter()
-                                .map(|c| c.x + c.w)
-                                .fold(f32::NEG_INFINITY, f32::max);
-                            let max_y = self
-                                .board
-                                .cards
-                                .iter()
-                                .map(|c| c.y + c.h)
-                                .fold(f32::NEG_INFINITY, f32::max);
-                            self.zoom = ((self.canvas.width() - 80.0) / (max_x - min_x).max(1.0))
-                                .min((self.canvas.height() - 80.0) / (max_y - min_y).max(1.0))
-                                .clamp(0.1, 2.0);
-                            self.pan =
-                                -vec2((min_x + max_x) * 0.5, (min_y + max_y) * 0.5) * self.zoom;
-                        } else {
-                            self.pan = Vec2::ZERO;
-                            self.zoom = 1.0;
-                        }
+                    if ui.button("Fit all").on_hover_text("F").clicked() {
+                        self.fit_all();
+                    }
+                    if ui.button("100%").on_hover_text("Back to actual size").clicked() {
+                        let middle = self.view_center();
+                        self.zoom = 1.0;
+                        self.pan = -middle.to_vec2();
                     }
                     ui.label(format!("{}%", (self.zoom * 100.0).round()));
-                    ui.label("Wheel: zoom · middle drag or Space+drag: pan");
+                    ui.label("Wheel zooms · middle drag or Space+drag pans · double-click adds a note");
                 });
             },
         );
@@ -809,6 +923,12 @@ impl CanopyApp for Moodboard {
         }
         if canvas_response.clicked() {
             self.selected = None;
+        }
+        if canvas_response.double_clicked() {
+            if let Some(at) = canvas_response.interact_pointer_pos() {
+                let at = self.world(at) - vec2(120.0, 20.0);
+                self.add_note(at, ui);
+            }
         }
         if canvas_response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
@@ -955,10 +1075,17 @@ impl CanopyApp for Moodboard {
             let body_response = ui.interact(
                 rect,
                 ui.scope_id().with(("moodboard-card-body", card.id)),
-                Sense::click(),
+                Sense::click_and_drag(),
             );
             if body_response.clicked() {
                 pick = Some(card.id);
+            }
+            if body_response.dragged_by(egui::PointerButton::Primary) && !space_down {
+                let delta = body_response.drag_delta() / self.zoom;
+                self.board.cards[index].x += delta.x;
+                self.board.cards[index].y += delta.y;
+                pick = Some(card.id);
+                changed = true;
             }
             let response = ui.interact(
                 header,
@@ -975,7 +1102,7 @@ impl CanopyApp for Moodboard {
                 pick = Some(card.id);
                 changed = true;
             }
-            if matches!(&card.kind, CardKind::Image { .. } | CardKind::Video { .. }) {
+            {
                 let grip =
                     Rect::from_center_size(rect.right_bottom() - vec2(9.0, 9.0), vec2(18.0, 18.0));
                 painter.rect_filled(grip, 4.0, color::LEAF);
@@ -993,12 +1120,17 @@ impl CanopyApp for Moodboard {
                         Sense::click_and_drag(),
                     )
                     .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
-                    .on_hover_text("Drag to resize media");
+                    .on_hover_text("Drag to resize");
                 if resize.clicked() || resize.dragged() {
                     pick = Some(card.id);
                 }
                 if resize.dragged() {
-                    let (w, h) = resized_image(card.w, card.h, resize.drag_delta(), self.zoom);
+                    let (w, h) = if matches!(&card.kind, CardKind::Note { .. }) {
+                        let delta = resize.drag_delta() / self.zoom.max(0.1);
+                        ((card.w + delta.x).clamp(120.0, 800.0), (card.h + delta.y).clamp(90.0, 800.0))
+                    } else {
+                        resized_image(card.w, card.h, resize.drag_delta(), self.zoom)
+                    };
                     self.board.cards[index].w = w;
                     self.board.cards[index].h = h;
                     changed = true;
@@ -1025,6 +1157,75 @@ impl CanopyApp for Moodboard {
         }
         if let Some(id) = pick {
             self.selected = Some(id);
+            // What you pick up comes to the front.
+            if let Some(at) = self.board.cards.iter().position(|c| c.id == id).filter(|at| at + 1 != self.board.cards.len()) {
+                let card = self.board.cards.remove(at);
+                self.board.cards.push(card);
+                // Saved, but not an undo step of its own.
+                self.dirty = true;
+                self.last_edit = ui.input(|i| i.time);
+            }
+        }
+        // Keys, while this pane has the keyboard and no text field does.
+        if host.focused() && !ui.ctx().memory(|m| m.focused().is_some()) {
+            use egui::{Key, Modifiers};
+            let (undo, redo, duplicate, delete, escape, fit, nudge, pasted) = ui.input_mut(|i| {
+                let redo = i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y);
+                let undo = !redo && i.consume_key(Modifiers::COMMAND, Key::Z);
+                let step = if i.modifiers.shift { 10.0 } else { 1.0 };
+                let mut nudge = Vec2::ZERO;
+                for (key, by) in [(Key::ArrowLeft, vec2(-1.0, 0.0)), (Key::ArrowRight, vec2(1.0, 0.0)), (Key::ArrowUp, vec2(0.0, -1.0)), (Key::ArrowDown, vec2(0.0, 1.0))] {
+                    if i.key_pressed(key) {
+                        nudge += by * step;
+                    }
+                }
+                let pasted = i.events.iter().find_map(|event| match event {
+                    egui::Event::Paste(text) if !text.trim().is_empty() => Some(text.clone()),
+                    _ => None,
+                });
+                (undo, redo, i.consume_key(Modifiers::COMMAND, Key::D), i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace), i.key_pressed(Key::Escape), i.consume_key(Modifiers::NONE, Key::F), nudge, pasted)
+            });
+            if undo {
+                history = Some(true);
+            }
+            if redo {
+                history = Some(false);
+            }
+            if duplicate && self.duplicate_selected() {
+                changed = true;
+            }
+            if delete && self.remove_selected() {
+                changed = true;
+            }
+            if escape {
+                self.selected = None;
+            }
+            if fit {
+                self.fit_all();
+            }
+            if nudge != Vec2::ZERO {
+                if let Some(card) = self.board.cards.iter_mut().find(|c| Some(c.id) == self.selected) {
+                    card.x += nudge.x;
+                    card.y += nudge.y;
+                    changed = true;
+                }
+            }
+            // Text on the clipboard lands as a note in the middle of the view.
+            if let Some(text) = pasted {
+                let at = self.view_center() - vec2(120.0, 95.0);
+                self.add_note(at, ui);
+                if let Some(CardKind::Note { text: note }) = self.board.cards.last_mut().map(|c| &mut c.kind) {
+                    *note = text;
+                }
+            }
+        }
+        if let Some(back) = history {
+            if !self.step(back) {
+                host.toast(if back { "Nothing to undo".into() } else { "Nothing to redo".into() });
+            }
+        }
+        if delete_board {
+            self.delete_board(host);
         }
         if let Some(id) = play {
             self.toggle_video(id);
@@ -1039,6 +1240,7 @@ impl CanopyApp for Moodboard {
             ui.scope_builder(UiBuilder::new().max_rect(side.shrink(12.0)), |ui| {
                 let mut changed = false;
                 let mut remove = false;
+                let mut duplicate = false;
                 if let Some(card) = self
                     .board
                     .cards
@@ -1097,25 +1299,25 @@ impl CanopyApp for Moodboard {
                             .changed();
                     }
                     ui.add_space(12.0);
-                    remove = ui.button("Delete item").clicked();
+                    ui.horizontal(|ui| {
+                        duplicate = ui.button("Duplicate").on_hover_text("Ctrl+D").clicked();
+                        remove = ui.button("Delete item").on_hover_text("Delete").clicked();
+                    });
+                    ui.add_space(8.0);
+                    ui.label(canopy_ui::muted("Arrows nudge (Shift: 10). Ctrl+Z undoes."));
+                }
+                if duplicate {
+                    changed |= self.duplicate_selected();
                 }
                 if remove {
-                    if self
-                        .playing
-                        .as_ref()
-                        .is_some_and(|p| Some(p.id) == self.selected)
-                    {
-                        self.playing = None;
-                    }
-                    self.board.cards.retain(|c| Some(c.id) != self.selected);
-                    self.selected = None;
-                    changed = true;
+                    changed |= self.remove_selected();
                 }
                 if changed {
                     self.mark(ui);
                 }
             });
         }
+        self.settle();
         let time = ui.input(|i| i.time);
         if self.dirty && (self.last_edit == 0.0 || time - self.last_edit > 0.8) {
             if let Err(e) = self.save_board() {
@@ -1192,12 +1394,48 @@ mod tests {
         assert_eq!((small.1 - IMAGE_HEADER) / small.0, 0.5);
     }
     #[test]
+    fn undo_and_redo_step_through_edits_and_a_board_reopens_where_it_was_left() {
+        let dir = std::env::temp_dir().join(format!("canopy-moodie-undo-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let place = Place { space: None, projects_dir: dir.join("boards"), data_dir: dir.join("data"), exports_dir: dir.join("exports") };
+        let mut app = Moodboard::new(place.clone());
+        let note = |id| Card { id, x: 0.0, y: 0.0, w: 240.0, h: 190.0, kind: CardKind::Note { text: String::new() } };
+        // Two edits apart in time are two steps; a duplicate right after the second joins it.
+        app.record();
+        app.board.cards.push(note(1));
+        app.edited = None;
+        app.settle();
+        app.record();
+        app.board.cards.push(note(2));
+        app.selected = Some(2);
+        app.record();
+        assert!(app.duplicate_selected());
+        assert_eq!(app.board.cards.len(), 3);
+        assert!(app.step(true));
+        assert_eq!(app.board.cards.len(), 1);
+        assert!(app.step(true));
+        assert!(app.board.cards.is_empty() && app.selected.is_none());
+        assert!(!app.step(true));
+        assert!(app.step(false) && app.step(false));
+        assert_eq!(app.board.cards.iter().map(|c| c.id).collect::<Vec<_>>(), [1, 2, 3]);
+        assert!(app.remove_selected() || app.selected.is_none());
+
+        app.pan = vec2(120.0, -40.0);
+        app.zoom = 1.5;
+        app.dirty = true;
+        app.save_board().unwrap();
+        let again = Moodboard::new(place);
+        assert_eq!((again.pan, again.zoom), (vec2(120.0, -40.0), 1.5));
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
     fn board_roundtrip_preserves_world_positions_and_notes() {
         let board = Board {
             version: 1,
             id: "test".into(),
             name: "Ideas".into(),
             saved_at: 1,
+            view: None,
             cards: vec![Card {
                 id: 1,
                 x: -4200.0,
