@@ -108,6 +108,8 @@ pub struct FileManager {
     thumb_jobs: Sender<PathBuf>,
     thumb_done: Receiver<(PathBuf, Option<Frame>)>,
     rename: Option<(PathBuf, String)>,
+    /// The file whose rename dialog has had its name selected, so that happens once as it opens.
+    rename_selected: Option<PathBuf>,
     toasts: Vec<String>,
     /// This pane has the keyboard and no dialog is up.
     focused: bool,
@@ -180,6 +182,7 @@ impl FileManager {
             thumb_jobs,
             thumb_done,
             rename: None,
+            rename_selected: None,
             focused: false,
             cursor: None,
             reveal: None,
@@ -1098,7 +1101,7 @@ impl FileManager {
         }
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
-            if primary_button(ui, "Play", Mood::Ember).clicked() {
+            if primary_button(ui, if matches!(entry.kind, Kind::Video | Kind::Audio) { "Play" } else { "Open" }, Mood::Ember).clicked() {
                 open_with_default(&entry.path);
             }
             if quiet_button(ui, "Show in Explorer", Some(Icon::Folder)).clicked() {
@@ -1118,7 +1121,16 @@ impl FileManager {
         let modal = egui::Modal::new(ui.scope_id().with("fm-rename")).show(ui.ctx(), |ui| {
             ui.set_width(380.0);
             ui.label(RichText::new("Rename").font(font::display(20.0)));
-            let field = ui.add(egui::TextEdit::singleline(&mut name).desired_width(f32::INFINITY).margin(vec2(10.0, 8.0)));
+            let id = ui.scope_id().with("fm-rename-field");
+            let field = ui.add(egui::TextEdit::singleline(&mut name).id(id).desired_width(f32::INFINITY).margin(vec2(10.0, 8.0)));
+            // As the dialog opens, select the name without its extension: typing replaces it, as in Explorer.
+            if self.rename_selected.as_ref() != Some(&path) {
+                self.rename_selected = Some(path.clone());
+                let stem = if path.is_dir() { name.chars().count() } else { Path::new(&name).file_stem().map_or(0, |s| s.to_string_lossy().chars().count()) };
+                let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(stem))));
+                state.store(ui.ctx(), id);
+            }
             // The field keeps the keyboard while the dialog is up, so Enter is read from the keys.
             field.request_focus();
             let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -1135,8 +1147,10 @@ impl FileManager {
         self.rename = Some((path.clone(), name.clone()));
         if modal.should_close() || done == Some(false) {
             self.rename = None;
+            self.rename_selected = None;
         } else if done == Some(true) {
             self.rename = None;
+            self.rename_selected = None;
             self.commit_draft();
             match self.rename_file(&path, &name) {
                 Ok(to) => {

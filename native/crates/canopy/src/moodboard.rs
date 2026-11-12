@@ -242,6 +242,9 @@ struct Moodboard {
     pan: Vec2,
     zoom: f32,
     canvas: Rect,
+    /// Where the board's zero point sits on screen before panning: the middle of the board area with the side panel
+    /// closed, so opening the panel doesn't shift the cards.
+    origin: Pos2,
     textures: HashMap<String, Option<TextureHandle>>,
     pending: Vec<(u64, Receiver<Result<Card, String>>)>,
     playing: Option<PlayingVideo>,
@@ -255,6 +258,8 @@ struct Moodboard {
     /// When the cards last changed; `stale` says `before` is behind them.
     edited: Option<Instant>,
     stale: bool,
+    /// The cards as of the last change, to close an undo step when a card is added or removed right after it.
+    latest: Vec<Card>,
 }
 
 struct PlayingVideo {
@@ -277,6 +282,8 @@ impl Moodboard {
         let (pan, zoom) = view_of(&board);
         Self {
             before: board.cards.clone(),
+            latest: board.cards.clone(),
+            origin: Pos2::ZERO,
             undo: Vec::new(),
             redo: Vec::new(),
             edited: None,
@@ -298,20 +305,26 @@ impl Moodboard {
     }
     fn world(&self, screen: Pos2) -> Pos2 {
         pos2(
-            (screen.x - self.canvas.center().x - self.pan.x) / self.zoom,
-            (screen.y - self.canvas.center().y - self.pan.y) / self.zoom,
+            (screen.x - self.origin.x - self.pan.x) / self.zoom,
+            (screen.y - self.origin.y - self.pan.y) / self.zoom,
         )
     }
     fn screen(&self, x: f32, y: f32) -> Pos2 {
-        self.canvas.center() + self.pan + vec2(x, y) * self.zoom
+        self.origin + self.pan + vec2(x, y) * self.zoom
     }
     fn mark(&mut self, ui: &Ui) {
         self.record();
         self.dirty = true;
         self.last_edit = ui.input(|i| i.time);
     }
-    /// Notes that the cards just changed. Changes that follow each other closely (a drag, typing) undo as one.
+    /// Notes that the cards just changed. Changes that follow each other closely (a drag, typing) undo as one;
+    /// adding or removing a card is always a step of its own.
     fn record(&mut self) {
+        let counted = self.board.cards.len() != self.latest.len();
+        if counted && self.edited.is_some() {
+            self.before = std::mem::take(&mut self.latest);
+            self.edited = None;
+        }
         if self.edited.is_none() {
             self.undo.push(std::mem::take(&mut self.before));
             if self.undo.len() > 100 {
@@ -319,8 +332,14 @@ impl Moodboard {
             }
             self.redo.clear();
         }
-        self.edited = Some(Instant::now());
-        self.stale = true;
+        self.latest = self.board.cards.clone();
+        if counted {
+            self.before = self.latest.clone();
+            self.stale = false;
+        } else {
+            self.edited = Some(Instant::now());
+            self.stale = true;
+        }
     }
     /// Once an edit has rested, the next change starts a new undo step.
     fn settle(&mut self) {
@@ -339,6 +358,7 @@ impl Moodboard {
         let Some(cards) = from.pop() else { return false };
         to.push(std::mem::replace(&mut self.board.cards, cards));
         self.before = self.board.cards.clone();
+        self.latest = self.before.clone();
         self.stale = false;
         if !self.board.cards.iter().any(|c| Some(c.id) == self.selected) {
             self.selected = None;
@@ -350,6 +370,7 @@ impl Moodboard {
     }
     fn fresh_history(&mut self) {
         self.before = self.board.cards.clone();
+        self.latest = self.before.clone();
         self.undo.clear();
         self.redo.clear();
         self.edited = None;
@@ -388,7 +409,7 @@ impl Moodboard {
         let max_x = cards.iter().map(|c| c.x + c.w).fold(f32::NEG_INFINITY, f32::max);
         let max_y = cards.iter().map(|c| c.y + c.h).fold(f32::NEG_INFINITY, f32::max);
         self.zoom = ((self.canvas.width() - 80.0) / (max_x - min_x).max(1.0)).min((self.canvas.height() - 80.0) / (max_y - min_y).max(1.0)).clamp(0.1, 2.0);
-        self.pan = -vec2((min_x + max_x) * 0.5, (min_y + max_y) * 0.5) * self.zoom;
+        self.pan = self.canvas.center() - self.origin - vec2((min_x + max_x) * 0.5, (min_y + max_y) * 0.5) * self.zoom;
     }
     fn save_board(&mut self) -> Result<(), String> {
         if !self.dirty {
@@ -790,6 +811,7 @@ impl CanopyApp for Moodboard {
             pos2(whole.left(), toolbar.bottom()),
             pos2(whole.right() - inspector_width, whole.bottom()),
         );
+        self.origin = pos2(whole.center().x, (toolbar.bottom() + whole.bottom()) * 0.5);
         ui.painter()
             .rect_filled(toolbar, 0.0, Color32::from_rgb(29, 26, 18));
         let mut delete_board = false;
@@ -797,7 +819,9 @@ impl CanopyApp for Moodboard {
         ui.scope_builder(
             UiBuilder::new().max_rect(toolbar.shrink2(vec2(10.0, 4.0))),
             |ui| {
-                ui.horizontal_centered(|ui| {
+                // Two rows: `horizontal_centered` would take the whole height and hide the second.
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
                     let mut switch = None;
                     egui::ComboBox::from_id_salt("moodboard-list")
                         .selected_text(&self.board.name)
@@ -853,7 +877,7 @@ impl CanopyApp for Moodboard {
                         history = Some(false);
                     }
                 });
-                ui.horizontal_centered(|ui| {
+                ui.horizontal(|ui| {
                     if ui.button("+ Note").on_hover_text("Or double-click the board").clicked() {
                         let at = self.view_center() - vec2(120.0, 95.0);
                         self.add_note(at, ui);
@@ -889,7 +913,7 @@ impl CanopyApp for Moodboard {
                     if ui.button("100%").on_hover_text("Back to actual size").clicked() {
                         let middle = self.view_center();
                         self.zoom = 1.0;
-                        self.pan = -middle.to_vec2();
+                        self.pan = self.canvas.center() - self.origin - middle.to_vec2();
                     }
                     ui.label(format!("{}%", (self.zoom * 100.0).round()));
                     ui.label("Wheel zooms · middle drag or Space+drag pans · double-click adds a note");
@@ -899,7 +923,7 @@ impl CanopyApp for Moodboard {
         let painter = ui.painter().with_clip_rect(self.canvas);
         painter.rect_filled(self.canvas, 0.0, Color32::from_rgb(20, 23, 19));
         let step = (80.0 * self.zoom).max(12.0);
-        let origin = self.canvas.center() + self.pan;
+        let origin = self.origin + self.pan;
         let mut x = self.canvas.left() + (origin.x - self.canvas.left()).rem_euclid(step);
         while x < self.canvas.right() {
             let mut y = self.canvas.top() + (origin.y - self.canvas.top()).rem_euclid(step);
@@ -938,7 +962,7 @@ impl CanopyApp for Moodboard {
                     .unwrap_or(self.canvas.center());
                 let before = self.world(pointer);
                 self.zoom = (self.zoom * (scroll * 0.0015).exp()).clamp(0.1, 4.0);
-                self.pan = pointer - self.canvas.center() - before.to_vec2() * self.zoom;
+                self.pan = pointer - self.origin - before.to_vec2() * self.zoom;
             }
         }
         if self.board.cards.is_empty() {
@@ -1400,23 +1424,30 @@ mod tests {
         let place = Place { space: None, projects_dir: dir.join("boards"), data_dir: dir.join("data"), exports_dir: dir.join("exports") };
         let mut app = Moodboard::new(place.clone());
         let note = |id| Card { id, x: 0.0, y: 0.0, w: 240.0, h: 190.0, kind: CardKind::Note { text: String::new() } };
-        // Two edits apart in time are two steps; a duplicate right after the second joins it.
-        app.record();
+        // Adding a card is a step of its own, even right after another edit; a nudge made in a few moves is one step.
         app.board.cards.push(note(1));
-        app.edited = None;
-        app.settle();
         app.record();
         app.board.cards.push(note(2));
-        app.selected = Some(2);
         app.record();
+        app.selected = Some(2);
+        for _ in 0..3 {
+            app.board.cards[1].x += 1.0;
+            app.record();
+        }
         assert!(app.duplicate_selected());
+        app.record();
+        app.settle();
         assert_eq!(app.board.cards.len(), 3);
+        assert!(app.step(true));
+        assert_eq!((app.board.cards.len(), app.board.cards[1].x), (2, 3.0));
+        assert!(app.step(true));
+        assert_eq!((app.board.cards.len(), app.board.cards[1].x), (2, 0.0));
         assert!(app.step(true));
         assert_eq!(app.board.cards.len(), 1);
         assert!(app.step(true));
         assert!(app.board.cards.is_empty() && app.selected.is_none());
         assert!(!app.step(true));
-        assert!(app.step(false) && app.step(false));
+        assert!(app.step(false) && app.step(false) && app.step(false) && app.step(false) && !app.step(false));
         assert_eq!(app.board.cards.iter().map(|c| c.id).collect::<Vec<_>>(), [1, 2, 3]);
         assert!(app.remove_selected() || app.selected.is_none());
 
