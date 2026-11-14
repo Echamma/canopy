@@ -4,6 +4,13 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use url::Url;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Delivery {
+    Opened,
+    Sent,
+    Queued,
+}
+
 fn composer_url(task_dir: &Path, prompt: &str) -> Result<Url, String> {
     if !task_dir.is_absolute() || !task_dir.is_dir() {
         return Err(format!(
@@ -85,7 +92,7 @@ fn queue_command(cli: &Path, thread_id: &str, prompt: &str) -> Command {
 }
 
 /// Called on the handoff worker. Queue just once, then ask the Desktop host to process its queue.
-pub(super) fn queue(thread_id: &str, prompt: &str) -> Result<(), String> {
+pub(super) fn queue(thread_id: &str, prompt: &str) -> Result<Delivery, String> {
     if !valid_thread_id(thread_id) {
         return Err("Enter a Codex chat ID in UUID format.".into());
     }
@@ -120,8 +127,10 @@ pub(super) fn queue(thread_id: &str, prompt: &str) -> Result<(), String> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    open_link(&format!("codex://threads/wake/{thread_id}")).map_err(|e| {
-        format!("The request is already queued. Open the selected chat in Codex to continue. {e}")
+    // The request has already been accepted. A failed activation must never offer to enqueue it again.
+    Ok(match open_link(&format!("codex://threads/wake/{thread_id}")) {
+        Ok(()) => Delivery::Sent,
+        Err(_) => Delivery::Queued,
     })
 }
 

@@ -4,6 +4,7 @@
 
 mod codex_launch;
 mod codex_task;
+mod recent_chats;
 mod dragout;
 pub mod notes;
 
@@ -65,6 +66,8 @@ struct Prefs {
     by_name: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     codex_thread_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    last_post_platforms: Vec<codex_task::Platform>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -106,11 +109,14 @@ enum CodexMode {
 struct CodexDialog {
     mode: CodexMode,
     files: Vec<codex_task::File>,
+    clip: usize,
+    draft_only: bool,
     destinations: Vec<codex_task::Platform>,
     instruction: String,
     existing_chat: bool,
     thread_id: String,
-    pending: Option<Receiver<Result<(), String>>>,
+    recent: recent_chats::Picker,
+    pending: Option<Receiver<Result<codex_launch::Delivery, String>>>,
     error: Option<String>,
 }
 
@@ -118,6 +124,91 @@ fn selected_thread_id(value: &str) -> Option<&str> {
     let value = value.trim();
     let id = value.strip_prefix("codex://threads/").unwrap_or(value);
     codex_launch::valid_thread_id(id).then_some(id)
+}
+
+impl CodexDialog {
+    fn edit_post(&mut self, ui: &mut Ui, thumbs: &HashMap<PathBuf, Option<Thumb>>, last_platforms: &[codex_task::Platform]) {
+        let count = self.files.len();
+        if count > 1 {
+            ui.horizontal(|ui| {
+                if ui.add_enabled(self.clip > 0, egui::Button::new("‹").small()).on_hover_text("Previous video").clicked() {
+                    self.clip -= 1;
+                }
+                ui.label(muted(format!("Video {} of {count}", self.clip + 1)));
+                if ui.add_enabled(self.clip + 1 < count, egui::Button::new("›").small()).on_hover_text("Next video").clicked() {
+                    self.clip += 1;
+                }
+            });
+        }
+        let file = &mut self.files[self.clip];
+        ui.horizontal(|ui| {
+            if let Some(Some(thumb)) = thumbs.get(&file.path) {
+                ui.add(egui::Image::new(&thumb.texture).fit_to_exact_size(thumb.texture.size_vec2() * (46.0 / thumb.texture.size_vec2().max_elem())));
+            }
+            let name = file.path.file_name().unwrap_or(file.path.as_os_str()).to_string_lossy();
+            ui.add(egui::Label::new(RichText::new(name).font(font::bold(14.0))).truncate()).on_hover_text(file.path.display().to_string());
+        });
+        ui.push_id(&file.path, |ui| {
+            section_label(ui, "Title");
+            ui.add(egui::TextEdit::singleline(&mut file.title).desired_width(f32::INFINITY).hint_text("Give this video a title"));
+            section_label(ui, "Caption / description");
+            ui.add(egui::TextEdit::multiline(&mut file.description).desired_width(f32::INFINITY).desired_rows(3).hint_text("What would you like to say?"));
+        });
+        ui.label(muted("These edits apply only to this request.").font(font::ui(11.0)));
+        section_label(ui, if count == 1 { "Platforms" } else { "Platforms for all videos" });
+        ui.horizontal_wrapped(|ui| {
+            for platform in codex_task::Platform::ALL {
+                let mut checked = self.destinations.contains(&platform);
+                if ui.checkbox(&mut checked, platform.label()).changed() {
+                    if checked {
+                        self.destinations.push(platform);
+                    } else {
+                        self.destinations.retain(|p| *p != platform);
+                    }
+                }
+            }
+        });
+        if !last_platforms.is_empty() && self.destinations != last_platforms {
+            let names = last_platforms.iter().map(|p| p.label()).collect::<Vec<_>>().join(" + ");
+            if ui.small_button(format!("Use last selection · {names}")).clicked() {
+                self.destinations = last_platforms.to_vec();
+            }
+        }
+        ui.horizontal_wrapped(|ui| {
+            ui.radio_value(&mut self.draft_only, false, "Publish");
+            ui.radio_value(&mut self.draft_only, true, "Draft in chat");
+        });
+        if self.draft_only {
+            ui.label(muted("Codex will write the drafts in chat for you to review.").font(font::ui(12.0)));
+        }
+        ui.collapsing("Posting instructions", |ui| {
+            ui.add(egui::TextEdit::multiline(&mut self.instruction).desired_width(f32::INFINITY).desired_rows(2).hint_text("Account, audience, or anything else Codex should know"));
+        });
+    }
+
+    fn ask(&mut self, ui: &mut Ui) {
+        egui::ScrollArea::vertical().id_salt("fm-codex-files").max_height(72.0).show(ui, |ui| {
+            for file in &self.files {
+                let name = file.path.file_name().unwrap_or(file.path.as_os_str()).to_string_lossy();
+                ui.add(egui::Label::new(name.as_ref()).truncate()).on_hover_text(file.path.display().to_string());
+            }
+        });
+        section_label(ui, "What would you like to do?");
+        ui.add(egui::TextEdit::multiline(&mut self.instruction).desired_width(f32::INFINITY).desired_rows(3).hint_text("Ask about your files or describe a task"));
+        if self.instruction.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                if ui.small_button("Summarize").clicked() {
+                    self.instruction = "Summarize the selected files.".into();
+                }
+                if self.files.len() > 1 && ui.small_button("Compare files").clicked() {
+                    self.instruction = "Compare the selected files and describe what differs.".into();
+                }
+                if self.files.iter().all(|f| codex_task::is_video(&f.path)) && ui.small_button("Suggest titles").clicked() {
+                    self.instruction = "Suggest three titles for each selected video.".into();
+                }
+            });
+        }
+    }
 }
 
 pub struct FileManager {
@@ -554,6 +645,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ctx = egui::Context::default();
         canopy_ui::install(&ctx);
+        ctx.enable_accesskit();
         let folder = dir.path().to_owned();
         let place = Place { projects_dir: folder.clone(), data_dir: folder.clone(), exports_dir: folder.clone(), space: None };
         let mut manager = FileManager::new(place, &ctx);
@@ -574,6 +666,7 @@ mod tests {
         manager.entries = vec![editing, rendered, entry("unselected.mp4")];
         let chat = "12345678-abcd-4321-abcd-123456789abc";
         manager.prefs.codex_thread_id = chat.into();
+        manager.prefs.last_post_platforms.clear();
         manager.start_codex(CodexMode::Publish);
         let dialog = manager.codex_dialog.as_ref().unwrap();
         assert!(!dialog.existing_chat, "a remembered ID must not enable direct sending");
@@ -584,11 +677,39 @@ mod tests {
         assert_eq!(dialog.files[1].title, "Video Chat title");
         assert_eq!(dialog.files[1].description, "Render caption");
         assert!(dialog.destinations.is_empty());
+        assert!(!dialog.draft_only);
 
         struct TestHost;
         impl Host for TestHost {
             fn toast(&mut self, _: String) {}
             fn exported(&mut self, _: PathBuf) {}
+        }
+        fn render(manager: &mut FileManager, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+                events,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| manager.show_codex_dialog(ui, &mut TestHost));
+            output.textures_delta.clear();
+            output
+        }
+        fn click(manager: &mut FileManager, ctx: &egui::Context, label: &str) -> egui::FullOutput {
+            let output = render(manager, ctx, Vec::new());
+            let position = output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == label => {
+                    let center = text.visual_bounding_rect().center();
+                    shape.clip_rect.contains(center).then_some(center)
+                }
+                _ => None,
+            }).unwrap_or_else(|| panic!("No visible {label} control"));
+            render(manager, ctx, vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton { pos: position, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE },
+            ]);
+            render(manager, ctx, vec![
+                egui::Event::PointerButton { pos: position, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE },
+            ])
         }
         // The modal needs an initial layout pass before it paints at its centered position.
         let draw = || egui::RawInput { screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))), ..Default::default() };
@@ -599,21 +720,47 @@ mod tests {
             egui::Shape::Text(t) => Some(t.galley.text()),
             _ => None,
         }).collect();
-        for name in ["first.mp4", "rendered.mp4", "Instagram", "YouTube", "TikTok", "New Codex chat", "Open in Codex"] {
+        for name in ["first.mp4", "Video 1 of 2", "Instagram", "YouTube", "TikTok", "Publish", "Draft in chat", "New Codex chat", "Open in Codex"] {
             assert!(labels.contains(&name), "{name} missing from {labels:?}");
         }
+        let output = click(&mut manager, &ctx, "Draft in chat");
+        assert!(manager.codex_dialog.as_ref().unwrap().draft_only);
+        let (_, send_button) = output.platform_output.accesskit_update.as_ref().unwrap().nodes.iter()
+            .find(|(_, node)| node.label() == Some("Open in Codex")).unwrap();
+        assert!(!send_button.is_disabled(), "a general draft must work without platforms");
+        click(&mut manager, &ctx, "Instagram");
+        assert_eq!(manager.codex_dialog.as_ref().unwrap().destinations, [codex_task::Platform::Instagram]);
+        click(&mut manager, &ctx, "Publish");
+        click(&mut manager, &ctx, "›");
+        assert_eq!(manager.codex_dialog.as_ref().unwrap().clip, 1);
+        click(&mut manager, &ctx, "Video Chat title");
+        render(&mut manager, &ctx, vec![
+            egui::Event::ModifiersChanged(egui::Modifiers { ctrl: true, command: true, ..Default::default() }),
+            egui::Event::Key { key: egui::Key::A, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers { ctrl: true, command: true, ..Default::default() } },
+            egui::Event::ModifiersChanged(egui::Modifiers::NONE),
+            egui::Event::Text("A post-specific title".into()),
+        ]);
+        assert_eq!(manager.codex_dialog.as_ref().unwrap().files[1].title, "A post-specific title");
+        assert_eq!(manager.renders[0].note.title, "Video Chat title");
         // Exercise the completion path without contacting Codex or writing any real preferences.
         manager.prefs_file = folder.join("test-preferences.json");
         let next_chat = "12345678-abcd-4321-abcd-123456789def";
         let dialog = manager.codex_dialog.as_mut().unwrap();
+        dialog.files[0].title = "A post-specific title".into();
+        dialog.files[1].description = "For this post only".into();
+        dialog.destinations = vec![codex_task::Platform::YouTube, codex_task::Platform::Instagram];
         dialog.existing_chat = true;
         dialog.thread_id = format!("codex://threads/{next_chat}");
         let (done, pending) = channel();
         dialog.pending = Some(pending);
-        done.send(Ok(())).unwrap();
+        done.send(Ok(codex_launch::Delivery::Queued)).unwrap();
         ctx.run_ui(draw(), |ui| manager.show_codex_dialog(ui, &mut TestHost)).textures_delta.clear();
+        assert!(manager.codex_dialog.is_none(), "an accepted request cannot be sent twice from this composer");
         let saved: Prefs = serde_json::from_slice(&std::fs::read(&manager.prefs_file).unwrap()).unwrap();
         assert_eq!(saved.codex_thread_id, next_chat);
+        assert_eq!(saved.last_post_platforms, [codex_task::Platform::YouTube, codex_task::Platform::Instagram]);
+        assert_eq!(manager.draft.as_ref().unwrap().1.title, "Latest edit");
+        assert_eq!(manager.renders[0].note.description, "Render caption");
         manager.start_codex(CodexMode::Ask);
         assert!(!manager.codex_dialog.unwrap().existing_chat);
     }
@@ -802,10 +949,13 @@ impl FileManager {
             self.codex_dialog = Some(CodexDialog {
                 mode,
                 files,
+                clip: 0,
+                draft_only: false,
                 destinations: Vec::new(),
                 instruction: String::new(),
                 existing_chat: false,
                 thread_id: self.prefs.codex_thread_id.clone(),
+                recent: recent_chats::Picker::default(),
                 pending: None,
                 error: None,
             });
@@ -817,17 +967,26 @@ impl FileManager {
         let Some(dialog) = &mut self.codex_dialog else { return };
         if let Some(pending) = &dialog.pending {
             match pending.try_recv() {
-                Ok(Ok(())) => {
+                Ok(Ok(delivery)) => {
                     let sent = dialog.existing_chat;
                     if sent {
                         let id = selected_thread_id(&dialog.thread_id).expect("a sent request had a verified chat ID");
                         self.prefs.codex_thread_id = id.to_owned();
                     }
+                    let remember_platforms = dialog.mode == CodexMode::Publish && !dialog.draft_only;
+                    if remember_platforms {
+                        self.prefs.last_post_platforms.clone_from(&dialog.destinations);
+                    }
                     self.codex_dialog = None;
-                    if sent {
+                    if sent || remember_platforms {
                         self.save_prefs();
                     }
-                    host.toast(if sent { "Request sent to your Codex chat." } else { "Opened in Codex. Press Send there to start." }.into());
+                    let message = match delivery {
+                        codex_launch::Delivery::Opened => "Ready in Codex. Press Send there to start.",
+                        codex_launch::Delivery::Sent => "Sent to your Codex chat.",
+                        codex_launch::Delivery::Queued => "Queued in Codex. Open your chosen chat to continue.",
+                    };
+                    host.toast(message.into());
                     return;
                 }
                 Ok(Err(error)) => {
@@ -851,37 +1010,16 @@ impl FileManager {
         let mut cancel = false;
         let modal = egui::Modal::new(ui.scope_id().with("fm-codex")).show(ui.ctx(), |ui| {
             let viewport = ui.ctx().content_rect().size();
-            ui.set_width((viewport.x - 48.0).clamp(120.0, 400.0));
-            ui.label(RichText::new(if publishing { "Publish with Codex" } else { "Ask Codex" }).font(font::display(20.0)));
+            ui.set_width((viewport.x - 48.0).clamp(120.0, 460.0));
+            ui.label(RichText::new(if publishing { "Compose a post" } else { "Ask Codex" }).font(font::display(20.0)));
             egui::ScrollArea::vertical().max_height((viewport.y - 150.0).max(90.0)).show(ui, |ui| {
-                let count = dialog.files.len();
-                ui.label(muted(format!("{count} {} selected", if count == 1 { "file" } else { "files" })));
-                egui::ScrollArea::vertical().id_salt("fm-codex-files").max_height(72.0).show(ui, |ui| {
-                    for file in &dialog.files {
-                        let name = file.path.file_name().unwrap_or(file.path.as_os_str()).to_string_lossy();
-                        ui.add(egui::Label::new(name.as_ref()).truncate()).on_hover_text(file.path.display().to_string());
-                    }
-                });
                 ui.add_enabled_ui(idle, |ui| {
                     if publishing {
-                        section_label(ui, "Post each video to");
-                        ui.horizontal_wrapped(|ui| {
-                            use codex_task::Platform;
-                            for (platform, label) in [(Platform::Instagram, "Instagram"), (Platform::YouTube, "YouTube"), (Platform::TikTok, "TikTok")] {
-                                let mut checked = dialog.destinations.contains(&platform);
-                                if ui.checkbox(&mut checked, label).changed() {
-                                    if checked {
-                                        dialog.destinations.push(platform);
-                                    } else {
-                                        dialog.destinations.retain(|p| *p != platform);
-                                    }
-                                }
-                            }
-                        });
+                        dialog.edit_post(ui, &self.thumbs, &self.prefs.last_post_platforms);
+                    } else {
+                        dialog.ask(ui);
                     }
-                    section_label(ui, if publishing { "Posting instructions (optional)" } else { "Question or instructions (optional)" });
-                    let hint = if publishing { "Account, visibility, or other details" } else { "What would you like Codex to do with these files?" };
-                    ui.add(egui::TextEdit::multiline(&mut dialog.instruction).desired_width(f32::INFINITY).desired_rows(2).hint_text(hint));
+                    ui.separator();
                     egui::ComboBox::from_id_salt("fm-codex-delivery")
                         .selected_text(if dialog.existing_chat { "Send to existing chat" } else { "New Codex chat" })
                         .show_ui(ui, |ui| {
@@ -889,11 +1027,7 @@ impl FileManager {
                             ui.selectable_value(&mut dialog.existing_chat, true, "Send to existing chat");
                         });
                     if dialog.existing_chat {
-                        ui.label("Codex chat ID");
-                        ui.add(egui::TextEdit::singleline(&mut dialog.thread_id).desired_width(f32::INFINITY).hint_text("Enter your Codex chat ID or chat link"));
-                        if !dialog.thread_id.is_empty() && selected_thread_id(&dialog.thread_id).is_none() {
-                            ui.colored_label(color::DANGER, "Enter a UUID or a codex://threads/ link.");
-                        }
+                        dialog.recent.show(ui, &mut dialog.thread_id);
                     }
                 });
                 if let Some(error) = &dialog.error {
@@ -909,7 +1043,7 @@ impl FileManager {
                 }));
                 ui.horizontal_wrapped(|ui| {
                     let button = if dialog.existing_chat { "Send to Codex" } else { "Open in Codex" };
-                    send = ui.add_enabled(ready && (!publishing || !dialog.destinations.is_empty()), egui::Button::new(button))
+                    send = ui.add_enabled(ready && (!publishing || dialog.draft_only || !dialog.destinations.is_empty()), egui::Button::new(button))
                         .on_disabled_hover_text(if !ready { "Enter a valid chat ID." } else { "Choose at least one destination." }).clicked();
                     cancel = ui.button("Cancel").clicked();
                 });
@@ -917,12 +1051,14 @@ impl FileManager {
                 ui.horizontal(|ui| { ui.spinner(); ui.label(if dialog.existing_chat { "Sending to Codex…" } else { "Opening in Codex…" }); });
             }
         });
-        if idle && (cancel || modal.should_close()) {
+        // Edits belong to this request. An incidental click outside the composer mustn't discard them.
+        if idle && (cancel || (!modal.backdrop_response.clicked() && modal.should_close())) {
             self.codex_dialog = None;
         } else if send {
             let (tx, rx) = channel();
             let files = dialog.files.clone();
             let destinations = dialog.destinations.clone();
+            let draft_only = publishing && dialog.draft_only;
             let instruction = dialog.instruction.clone();
             let thread_id = if dialog.existing_chat {
                 let Some(id) = selected_thread_id(&dialog.thread_id) else { return };
@@ -933,7 +1069,7 @@ impl FileManager {
             let ctx = ui.ctx().clone();
             dialog.error = None;
             match std::thread::Builder::new().name("canopy-codex".into()).spawn(move || {
-                let result = codex_task::send(&files, &destinations, &instruction, thread_id.as_deref());
+                let result = codex_task::send(&files, &destinations, &instruction, thread_id.as_deref(), draft_only);
                 let _ = tx.send(result);
                 ctx.request_repaint();
             }) {
