@@ -6,6 +6,7 @@ Each app still opens on its own from its own exe. Inside Canopy they keep their 
 
 ## Use
 
+- In the native **File Manager** (Ctrl+6), select files and choose **Ask Codex…** to send their paths, titles and descriptions. For videos, **Publish with Codex…** lets you choose Instagram Reels, YouTube and TikTok together or individually. Codex uses your signed-in browser sessions. **New Codex chat** opens a prepared request for you to send. Choose **Send to existing chat** and enter its ID to start the request directly from Canopy. Canopy remembers the ID after a successful send.
 - **Where to?** lists your spaces. **New space** asks for a name and a color and makes a folder under `Documents\Canopy` (or wherever you choose). **Open a space folder** (the folder button) adds one made elsewhere. Right-click a space to show it in Explorer or remove it from the list (its folder stays).
 - In a space, the top bar has a tab for each app. Click one to open it; a dot shows it's running. **Ctrl+Tab** and **Ctrl+Shift+Tab** move between apps, and **Ctrl+1**, **Ctrl+2** and **Ctrl+3** jump to Forma, Folio and StreamCuts. Apps keep running in the background while you switch.
 - The split button (top right, or in a pane's header) shows two apps side by side. Opening a third replaces the one you used least recently.
