@@ -67,6 +67,10 @@ Downloads from StreamCuts (clip exports) land in `Files`. Full video exports use
 
 Native apps implement `canopy_ui::CanopyApp`. Menu sends and command-line opens call `receive`; a drag onto a pane or standalone window calls `receive_at` with the drop position in egui window coordinates. Its default implementation delegates to `receive`, so apps that do not place files at the pointer need no special handling. A native app can compare the position with its last drawn content rectangle and convert it to document coordinates. Explorer drops are routed to the pane under the pointer; files dropped onto the sidebar go to the space's Files folder. On Windows, `os_drop_position` reads the screen cursor when the drop is delivered because winit's OLE drag handler does not forward drag coordinates; this position is therefore approximate if the pointer moves before the next frame.
 
+## Shared settings
+
+Keys for stock services and the person's own media folders are set once, in Canopy's Settings (the gear at the top right), for every space and app: `canopy_core::settings::Settings::load()` reads `<profile>\settings.json` (`CANOPY_PROFILE`, else `%APPDATA%\Canopy`), whether the app runs inside Canopy or alone. Fields: `giphyKey`, `pixabayKey`, `freesoundKey`, `sounds`, `pictures`, `videos`. An app that runs alone can show the same form with `canopy_ui::shared_settings_ui` and `save()`. StreamCuts' Codex looks in the folders before it uses a key.
+
 ## Native apps: editing a picture in Folio and getting it back
 
 `Host::open_in(app, document)` shows another app and calls its `open_document(document)`. Besides project ids, Folio and StreamCuts use it for a round trip:
