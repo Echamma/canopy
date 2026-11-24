@@ -67,6 +67,17 @@ Downloads from StreamCuts (clip exports) land in `Files`. Full video exports use
 
 Native apps implement `canopy_ui::CanopyApp`. Menu sends and command-line opens call `receive`; a drag onto a pane or standalone window calls `receive_at` with the drop position in egui window coordinates. Its default implementation delegates to `receive`, so apps that do not place files at the pointer need no special handling. A native app can compare the position with its last drawn content rectangle and convert it to document coordinates. Explorer drops are routed to the pane under the pointer; files dropped onto the sidebar go to the space's Files folder. On Windows, `os_drop_position` reads the screen cursor when the drop is delivered because winit's OLE drag handler does not forward drag coordinates; this position is therefore approximate if the pointer moves before the next frame.
 
+## Native apps: editing a picture in Folio and getting it back
+
+`Host::open_in(app, document)` shows another app and calls its `open_document(document)`. Besides project ids, Folio and StreamCuts use it for a round trip:
+
+1. The sender calls `open_in("folio", "edit-picture:" + {"path": <picture>, "app": <its own id>, "reply": <any string>})` (JSON). StreamCuts does this from a picture clip's right-click menu, with `reply` = `{"project": <id>, "media": <id>}`.
+2. Folio opens the picture at its own size (format `custom`, `customSize`), as an element on a transparent slide, or reopens the project it made from that picture (or from its edited copy) before. The link is kept in the project as `pictureEdit`.
+3. Save (button or Ctrl+S) writes the first slide as a PNG, `<name> (edited).png` in the exports folder (`Files`), the same file on every save, and calls `open_in(<app>, "edited-picture:" + {"path": <that PNG>, "reply": <reply as given>})`.
+4. StreamCuts points the picture's media at the edited file (one undo step; the clips keep their place), opening the project it came from if another one is open. The original file is never changed.
+
+Running alone, `open_in` returns false: StreamCuts says the feature needs Canopy, and Folio still writes the PNG.
+
 ## Moving files between apps
 
 - **Drag** a file from the sidebar onto any app. It arrives as a normal file drop, so every app's own drop handling works.
