@@ -940,12 +940,35 @@ impl Shell {
                     self.toasts.retain(|t| t.at.elapsed() < Duration::from_secs(if t.targets.is_empty() { 5 } else { 10 }));
                     let mut send = None;
                     if let Some(toast) = self.toasts.last() {
-                        for &target in toast.targets.iter().rev() {
-                            if pill(ui, &format!("Send to {}", self.slots[target].name), Some(self.slots[target].accent), false).clicked() {
-                                send = toast.file.clone().map(|f| (f, target));
+                        // Only the room left of the clock and buttons, never over the app tabs: a Send to button per
+                        // app when they all fit beside the message, else one "Send to…" menu; the message is cut
+                        // short with "…" (whole on hover) when it still doesn't fit.
+                        let room = ui.available_width();
+                        let width = |text: &str, size: f32| ui.painter().layout_no_wrap(text.to_owned(), font::ui(size), color::INK).size().x;
+                        let pills: f32 = toast.targets.iter().map(|&t| width(&format!("Send to {}", self.slots[t].name), 14.0) + 48.0).sum();
+                        let text = egui::RichText::new(&toast.text).font(font::ui(13.0)).color(color::SELECT_INK);
+                        if pills + width(&toast.text, 13.0) + 12.0 <= room {
+                            for &target in toast.targets.iter().rev() {
+                                if pill(ui, &format!("Send to {}", self.slots[target].name), Some(self.slots[target].accent), false).clicked() {
+                                    send = toast.file.clone().map(|f| (f, target));
+                                }
+                            }
+                            ui.label(text);
+                        } else {
+                            if !toast.targets.is_empty() {
+                                let menu = pill(ui, "Send to…", None, false);
+                                egui::Popup::menu(&menu).show(|ui| {
+                                    for &target in &toast.targets {
+                                        if ui.button(self.slots[target].name).clicked() {
+                                            send = toast.file.clone().map(|f| (f, target));
+                                        }
+                                    }
+                                });
+                            }
+                            if ui.available_width() > 40.0 {
+                                ui.add(egui::Label::new(text).truncate()).on_hover_text(&toast.text);
                             }
                         }
-                        ui.label(egui::RichText::new(&toast.text).font(font::ui(13.0)).color(color::SELECT_INK));
                         ctx.request_repaint_after(Duration::from_millis(500));
                     }
                     if let Some((file, target)) = send {
