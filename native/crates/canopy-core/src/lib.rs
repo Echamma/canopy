@@ -2,6 +2,7 @@
 //! (`lib/spaces.cjs`, `lib/files.cjs`), so both versions open the same spaces.
 
 pub mod files;
+pub mod settings;
 pub mod spaces;
 
 use std::fmt;

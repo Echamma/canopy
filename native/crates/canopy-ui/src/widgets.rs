@@ -168,3 +168,48 @@ pub fn drag_source<P: std::any::Any + Send + Sync>(ui: &Ui, response: &Response,
         });
     }
 }
+
+/// The form for Canopy's shared settings (`canopy_core::settings`): the GIPHY, Pixabay and Freesound keys and the
+/// sound, picture and video folders. Canopy's Settings dialog shows it, and StreamCuts' Codex settings when it runs
+/// alone. Whether anything changed (the caller saves).
+pub fn shared_settings_ui(ui: &mut Ui, settings: &mut canopy_core::settings::Settings) -> bool {
+    let before = settings.clone();
+    egui::Grid::new("canopy-shared-settings").num_columns(2).spacing(egui::vec2(10.0, 8.0)).show(ui, |ui| {
+        for (label, key, hint) in [
+            ("GIPHY key", &mut settings.giphy_key, "for GIFs and stickers"),
+            ("Pixabay key", &mut settings.pixabay_key, "for pictures and stock video"),
+            ("Freesound key", &mut settings.freesound_key, "for sound effects"),
+        ] {
+            ui.label(label);
+            ui.add(egui::TextEdit::singleline(key).password(true).hint_text(hint).desired_width(260.0));
+            ui.end_row();
+        }
+        for (label, folder, title) in [
+            ("Sound folder", &mut settings.sounds, "Your sound effects folder"),
+            ("Pictures folder", &mut settings.pictures, "Your pictures folder"),
+            ("Videos folder", &mut settings.videos, "Your videos folder"),
+        ] {
+            ui.label(label);
+            ui.horizontal(|ui| {
+                let shown = folder.as_ref().map_or("None".to_string(), |p| p.display().to_string());
+                ui.add(egui::Label::new(muted(shown)).truncate()).on_hover_text(folder.as_ref().map_or(String::new(), |p| p.display().to_string()));
+                if ui.button("Choose…").clicked() {
+                    let mut dialog = rfd::FileDialog::new().set_title(title);
+                    if let Some(dir) = folder.as_ref().filter(|d| d.is_dir()) {
+                        dialog = dialog.set_directory(dir);
+                    }
+                    if let Some(dir) = dialog.pick_folder() {
+                        *folder = Some(dir);
+                    }
+                }
+                if folder.is_some() && ui.button("Clear").clicked() {
+                    *folder = None;
+                }
+            });
+            ui.end_row();
+        }
+    });
+    ui.add_space(4.0);
+    ui.label(muted("Codex in StreamCuts looks in your folders first and uses the keys only when nothing there fits. Keys stay on this computer, in Canopy's own settings, for every space."));
+    *settings != before
+}

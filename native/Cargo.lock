@@ -796,6 +796,7 @@ dependencies = [
  "dirs",
  "eframe",
  "egui",
+ "rfd",
 ]
 
 [[package]]

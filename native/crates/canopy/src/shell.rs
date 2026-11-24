@@ -184,6 +184,7 @@ enum Act {
     NewSpace,
     OpenFolder,
     FullScreen,
+    Settings,
 }
 
 pub struct Shell {
@@ -199,6 +200,8 @@ pub struct Shell {
     prefs_file: PathBuf,
     window_title: String,
     home_note: String,
+    /// Settings, while its dialog is up: a working copy, saved as it changes.
+    settings: Option<canopy_core::settings::Settings>,
 }
 
 impl Shell {
@@ -208,13 +211,53 @@ impl Shell {
         let prefs_file = profile.join("shell.json");
         Self {
             spaces: Spaces::new(profile.join("spaces.json"), root), slots: catalog(), open: None, toasts: Vec::new(), opens: Vec::new(), space_form: None, rename_file: None, quick: None,
-            prefs: layout::load(&prefs_file), prefs_file, window_title: "Canopy".into(), home_note: String::new(),
+            prefs: layout::load(&prefs_file), prefs_file, window_title: "Canopy".into(), home_note: String::new(), settings: None,
+        }
+        .with_keys_moved()
+    }
+
+    /// Keys and a sound folder set in StreamCuts' Codex settings in a space, before there was one place for them,
+    /// go into the shared Settings (filling only what's empty there) and out of the space.
+    fn with_keys_moved(self) -> Self {
+        for (space, available) in self.spaces.list() {
+            if available {
+                streamcuts::stock::migrate(&SpacePaths::new(&space.dir).app_data("streamcuts"));
+            }
+        }
+        self
+    }
+
+    fn open_settings(&mut self) {
+        self.settings = Some(canopy_core::settings::Settings::load());
+    }
+
+    /// Settings: the keys and folders every app shares.
+    fn settings_dialog(&mut self, ui: &mut Ui) {
+        let Some(settings) = &mut self.settings else { return };
+        let mut done = false;
+        let modal = egui::Modal::new(ui.scope_id().with("settings-dialog")).show(ui.ctx(), |ui| {
+            ui.set_width(520.0);
+            ui.label(egui::RichText::new("Settings").font(font::display(22.0)));
+            ui.label(canopy_ui::muted("For every space and every app."));
+            ui.add_space(10.0);
+            if canopy_ui::shared_settings_ui(ui, settings) {
+                if let Err(error) = settings.save() {
+                    ui.colored_label(color::DANGER, format!("Couldn't save: {error}"));
+                }
+            }
+            ui.add_space(8.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                done = primary_button(ui, "Done", Mood::Tide).clicked();
+            });
+        });
+        if modal.should_close() || done {
+            self.settings = None;
         }
     }
 
     /// A dialog is up: the apps leave the keyboard alone.
     fn busy(&self) -> bool {
-        self.quick.is_some() || self.space_form.is_some() || self.rename_file.is_some()
+        self.quick.is_some() || self.space_form.is_some() || self.rename_file.is_some() || self.settings.is_some()
     }
 
     fn set_sidebar_hidden(&mut self, hidden: bool) {
@@ -406,6 +449,12 @@ impl Shell {
         ui.scope_builder(UiBuilder::new().max_rect(rail), |ui| {
             if icon_button(ui, Icon::FolderPlus, "Open a space folder", false).clicked() {
                 self.open_folder();
+            }
+        });
+        let corner = Rect::from_min_size(pos2(rect.right() - 41.0, rect.top() + 7.0), vec2(34.0, 34.0));
+        ui.scope_builder(UiBuilder::new().max_rect(corner), |ui| {
+            if icon_button(ui, Icon::Settings, "Settings: keys and media folders", false).clicked() {
+                self.open_settings();
             }
         });
         let spaces = self.spaces.list();
@@ -649,6 +698,7 @@ impl Shell {
         entries.push(command("New space", "", Icon::Plus, Act::NewSpace));
         entries.push(command("Open a space folder", "", Icon::FolderPlus, Act::OpenFolder));
         entries.push(command("Full screen", "F11", Icon::ZoomIn, Act::FullScreen));
+        entries.push(command("Settings: keys and media folders", "", Icon::Settings, Act::Settings));
         entries
     }
 
@@ -686,6 +736,7 @@ impl Shell {
                     let _ = std::process::Command::new("explorer").arg(SpacePaths::new(&open.space.dir).files()).spawn();
                 }
             }
+            Act::Settings => self.open_settings(),
             Act::EditSpace => {
                 if let Some(space) = self.open.as_ref().map(|open| open.space.clone()) {
                     self.edit_space(&space);
@@ -875,6 +926,9 @@ impl Shell {
                 }
                 // Toast, then split and clock on the right.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if icon_button(ui, Icon::Settings, "Settings: keys and media folders", false).clicked() {
+                        self.open_settings();
+                    }
                     let now = chrono_like_clock();
                     ui.label(egui::RichText::new(now).font(font::ui(14.0)).color(color::INK));
                     if icon_button(ui, Icon::Split, "Show two apps side by side (Ctrl+J)", split).clicked() {
@@ -1293,6 +1347,7 @@ impl eframe::App for Shell {
         }
         self.space_form_dialog(ui);
         self.rename_file_dialog(ui);
+        self.settings_dialog(ui);
         self.quick_open(&ctx);
         // The window is named after the space, so the taskbar says where you are.
         let title = self.open.as_ref().map(|open| format!("{} · Canopy", open.space.name)).unwrap_or_else(|| "Canopy".into());
@@ -1324,7 +1379,7 @@ mod tests {
         open.pending = None;
         Shell {
             spaces: Spaces::new(dir.join("spaces.json"), &dir), slots, open: Some(open), toasts: Vec::new(), opens: Vec::new(), space_form: None, rename_file: None, quick: None,
-            prefs: Prefs::default(), prefs_file: dir.join("shell.json"), window_title: String::new(), home_note: String::new(),
+            prefs: Prefs::default(), prefs_file: dir.join("shell.json"), window_title: String::new(), home_note: String::new(), settings: None,
         }
     }
 

@@ -111,6 +111,7 @@ pub enum Icon {
     Lock,
     Sidebar,
     Swap,
+    Settings,
 }
 
 /// Draws a rounded line icon (1.75 stroke on a 24 grid) filling `rect`.
@@ -237,6 +238,16 @@ pub fn icon(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Sidebar => {
             painter.rect_stroke(Rect::from_min_max(p(3.0, 4.0), p(21.0, 20.0)), (2.0 * scale) as u8, stroke, egui::StrokeKind::Middle);
             line(&[(9.0, 4.0), (9.0, 20.0)]);
+        }
+        Icon::Settings => {
+            // A gear: eight teeth around a ring, and the hole in the middle.
+            for i in 0..8 {
+                let angle = i as f32 * std::f32::consts::TAU / 8.0;
+                let (sin, cos) = angle.sin_cos();
+                line(&[(12.0 + cos * 6.6, 12.0 + sin * 6.6), (12.0 + cos * 9.4, 12.0 + sin * 9.4)]);
+            }
+            painter.circle_stroke(p(12.0, 12.0), 6.2 * scale, stroke);
+            painter.circle_stroke(p(12.0, 12.0), 2.6 * scale, stroke);
         }
         Icon::Swap => {
             line(&[(4.0, 8.0), (20.0, 8.0)]);
