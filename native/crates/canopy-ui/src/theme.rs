@@ -170,6 +170,7 @@ fn fonts() -> FontDefinitions {
 
 /// Applies Canopy Night to a context: fonts, text sizes, dark widgets with veils and hairlines.
 pub fn install(ctx: &egui::Context) {
+    ctx.add_plugin(crate::popup::FinishPopupLayout);
     ctx.set_fonts(fonts());
     ctx.set_theme(egui::ThemePreference::Dark);
     ctx.all_styles_mut(|style| {

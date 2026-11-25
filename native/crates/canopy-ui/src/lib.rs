@@ -5,6 +5,7 @@
 
 mod app;
 mod paint;
+mod popup;
 mod standalone;
 mod theme;
 mod widgets;
