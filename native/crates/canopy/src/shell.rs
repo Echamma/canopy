@@ -480,13 +480,21 @@ impl Shell {
             let fill = Accent::from_name(&space.color).color();
             leaf(ui.painter(), mark, if *available { fill } else { fill.gamma_multiply(0.35) });
             let ink = if response.hovered() { color::INK } else { color::INK_MUTED };
-            ui.painter().with_clip_rect(area).text(pos2(area.center().x, area.top() + 84.0), Align2::CENTER_CENTER, &space.name, font::ui(13.0), ink);
+            let painter = ui.painter().with_clip_rect(area);
+            let mut job = egui::text::LayoutJob::simple_singleline(space.name.clone(), font::ui(13.0), ink);
+            job.wrap = egui::text::TextWrapping::truncate_at_width(area.width());
+            let name = painter.layout_job(job);
+            let label = Align2::CENTER_CENTER.align_size_within_rect(
+                name.size(),
+                Rect::from_center_size(pos2(area.center().x, area.top() + 84.0), vec2(tile, 24.0)),
+            );
+            painter.galley(label.min, name, ink);
             if response.clicked() {
                 open = Some(space.id.clone());
             }
             let dir = space.dir.clone();
             let id = space.id.clone();
-            response.on_hover_text(dir.display().to_string()).context_menu(|ui| {
+            response.on_hover_text(format!("{}\n{}", space.name, dir.display())).context_menu(|ui| {
                 if ui.button("Open").clicked() {
                     open = Some(id.clone());
                 }
