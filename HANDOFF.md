@@ -1,6 +1,6 @@
 # Canopy native rewrite: handoff
 
-Active agent: none
+Active agent: Codex (gpt-6.2-sol), Forma phase 1 on Forma `canopy` (per-property keys, graph editor, parenting, anchor); Claude reviews its code
 
 Claude and Codex take turns on this. Whoever stops updates this file (Done, In progress, Next steps), sets **Active agent** to `none`, and commits. Whoever starts reads it, sets **Active agent** to themselves, and commits.
 
