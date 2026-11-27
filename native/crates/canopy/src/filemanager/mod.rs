@@ -579,7 +579,7 @@ impl FileManager {
 }
 
 fn open_with_default(path: &Path) {
-    let _ = std::process::Command::new("explorer").arg(path).spawn();
+    crate::reveal::open(path);
 }
 
 /// Puts text on the clipboard now (the drag that follows runs before egui would).
@@ -1389,7 +1389,7 @@ impl FileManager {
                         ui.close();
                     }
                     if ui.button("Show in Explorer").clicked() {
-                        let _ = std::process::Command::new("explorer").arg(format!("/select,{}", entry.path.display())).spawn();
+                        crate::reveal::select(&entry.path);
                         ui.close();
                     }
                     if ui.button("Copy path").clicked() {
@@ -1573,7 +1573,7 @@ impl FileManager {
                 open_with_default(&entry.path);
             }
             if quiet_button(ui, "Show in Explorer", Some(Icon::Folder)).clicked() {
-                let _ = std::process::Command::new("explorer").arg(format!("/select,{}", entry.path.display())).spawn();
+                crate::reveal::select(&entry.path);
             }
             if entry.rendered.is_none() && ui.small_button("Rename…").clicked() {
                 self.rename = Some((entry.path.clone(), entry.name.clone()));

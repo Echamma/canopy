@@ -350,7 +350,7 @@ impl Shell {
         match focused.filter(|f| self.slots[*f].accepts(&file)).or_else(|| self.slots.iter().position(|s| s.accepts(&file))) {
             Some(index) => self.send(ctx, vec![file], index),
             None => {
-                let _ = std::process::Command::new("explorer").arg(format!("/select,{}", file.path.display())).spawn();
+                canopy::reveal::select(&file.path);
             }
         }
     }
@@ -502,7 +502,7 @@ impl Shell {
                     edit = Some(space.clone());
                 }
                 if ui.button("Show in Explorer").clicked() {
-                    let _ = std::process::Command::new("explorer").arg(&dir).spawn();
+                    canopy::reveal::open(&dir);
                 }
                 if ui.button("Remove from this list").clicked() {
                     forget = Some(id.clone());
@@ -741,7 +741,7 @@ impl Shell {
             Act::AddFiles => self.add_files(),
             Act::RevealFiles => {
                 if let Some(open) = &self.open {
-                    let _ = std::process::Command::new("explorer").arg(SpacePaths::new(&open.space.dir).files()).spawn();
+                    canopy::reveal::open(SpacePaths::new(&open.space.dir).files());
                 }
             }
             Act::Settings => self.open_settings(),
@@ -899,7 +899,7 @@ impl Shell {
                 pill_response.context_menu(|ui| {
                     edit = ui.button("Rename or recolor…").clicked();
                     if ui.button("Show in Explorer").clicked() {
-                        let _ = std::process::Command::new("explorer").arg(&space.dir).spawn();
+                        canopy::reveal::open(&space.dir);
                     }
                     if spaces.iter().any(|(other, available)| *available && other.id != space.id) {
                         ui.separator();
@@ -1070,10 +1070,10 @@ impl Shell {
                         }
                         ui.separator();
                         if ui.button("Open").clicked() {
-                            let _ = std::process::Command::new("explorer").arg(&shared.path).spawn();
+                            canopy::reveal::open(&shared.path);
                         }
                         if ui.button("Show in folder").clicked() {
-                            let _ = std::process::Command::new("explorer").arg(format!("/select,{}", shared.path.display())).spawn();
+                            canopy::reveal::select(&shared.path);
                         }
                         if ui.button("Copy path").clicked() {
                             ui.ctx().copy_text(shared.path.display().to_string());
@@ -1113,7 +1113,7 @@ impl Shell {
             }
         }
         if reveal {
-            let _ = std::process::Command::new("explorer").arg(&files_dir).spawn();
+            canopy::reveal::open(&files_dir);
         }
         match change {
             Some((FileChange::Rename, name)) => self.rename_file = Some(RenameFile { from: name.clone(), name, error: String::new() }),

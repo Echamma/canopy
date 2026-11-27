@@ -144,7 +144,7 @@ fn toolbar(app: &mut VideoChat, ui: &mut Ui, rect: Rect) {
                     }
                     if let Some(folder) = &app.folder {
                         if ui.button("Show Video Chat's folder").clicked() {
-                            let _ = std::process::Command::new("explorer").arg(folder).spawn();
+                            crate::reveal::open(folder);
                             ui.close();
                         }
                     }
@@ -257,7 +257,7 @@ fn downloads(app: &mut VideoChat, ui: &mut Ui) {
                 app.spawn(|| Reply::Folder(engine::request("PUT", "/api/twitch/folder", Some(&json!({"folder": ""})), Some(Duration::from_secs(10)))));
             }
             if ui.small_button("Show").clicked() {
-                let _ = std::process::Command::new("explorer").arg(&folder).spawn();
+                crate::reveal::open(&folder);
             }
         });
         if !same_drive {
@@ -409,7 +409,7 @@ fn projects(app: &mut VideoChat, ui: &mut Ui) {
             }
             if let Some(folder) = &app.folder {
                 if ui.button("Show in folder").clicked() {
-                    let _ = std::process::Command::new("explorer").arg(engine::jobs_dir(folder).join(&project.job_id)).spawn();
+                    crate::reveal::open(engine::jobs_dir(folder).join(&project.job_id));
                     ui.close();
                 }
             }
@@ -1292,10 +1292,10 @@ fn rendered_row(app: &mut VideoChat, ui: &mut Ui, video: &model::Rendered, kind:
         };
         ui.horizontal(|ui| {
             if ui.small_button("Play").clicked() {
-                let _ = std::process::Command::new("explorer").arg(&path).spawn();
+                crate::reveal::open(&path);
             }
             if ui.small_button("Show in folder").clicked() {
-                let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+                crate::reveal::select(&path);
             }
             if let Some(space) = &app.place.space {
                 if ui.small_button("Add to Files").on_hover_text("Copy it into this space's Files, to send on to StreamCuts or Folio").clicked() {
