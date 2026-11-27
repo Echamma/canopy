@@ -173,6 +173,8 @@ Spaces are shared with Electron Canopy: `%APPDATA%\Canopy\spaces.json` and the s
 
 - Claude, 2026-11-27, Canopy `dev`: every Show in folder / Show in Explorer / Open now goes through `crates\canopy\src\reveal.rs` (`reveal::select`, `reveal::open`). Before, `Command::arg("/select,<path>")` quoted the whole switch whenever the path had a space (spaces like "minecraft ep 1"), and Explorer fell back to Documents. Now paths are cleaned (backslashes, absolute, no `\?\` prefix) and the command line is written raw as `/select,"<path>"`; a missing file opens its nearest existing folder. Unit test only; the owner declined screen access, so the click in Canopy isn't checked on screen yet. Never call `explorer` with `.arg(format!("/select,..."))` again.
 
+- Claude, 2026-11-27, StreamCuts `canopy` 5b98845: long exports ran out of memory (the owner's 59-minute, 166-cut project "stoP FAILING FOR THE LOVE OF GOD" in "minecraft ep 1" failed every time with "Cannot allocate memory", FFmpeg past 60 GB). In one FFmpeg run the sound mix and the picture's overlays ask the same files for different moments, so FFmpeg kept every frame decoded in between; and every clip is an input held open. `export::start` now renders picture and sound in runs of their own (`arguments_for`, `Streams`), part by part with at most `CLIPS_PER_PART` (12) clips a run (`export::parts`: cuts on a frame where no clip, crossfade or title runs across), then joins: pictures copied, sound kept as PCM in the parts and encoded once (loudnorm over the whole). Failed exports delete their broken file. That project now exports headless in 34 min at 3.4 GB peak, 107034 frames, sound as long as the picture. StreamCuts tests 133 + 4 ignored.
+
 ## In progress
 
 
